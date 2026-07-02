@@ -360,7 +360,11 @@ def _agy_db_summaries() -> dict:
     import sqlite3, re as _re
     updates: dict = {}
     uuid_only = _re.compile(r"^[0-9a-f-]+$", _re.I)
-    printable = _re.compile(rb"[\x20-\x7e]{10,300}")
+    printable = _re.compile(rb"[\x20-\x7e]{4,300}")
+    # projectId candidates found in real .db files include "default-cli-project"
+    # and any string that isn't a UUID. Heuristic: pick strings with a dash
+    # or ending in "-project" / "-workspace" or explicit fallback.
+    project_hint = _re.compile(r"^[a-z0-9][a-z0-9\-_.]{2,120}$", _re.I)
     for d in AGY_CONVO_DIRS:
         if not os.path.isdir(d):
             continue
@@ -374,22 +378,35 @@ def _agy_db_summaries() -> dict:
                 continue  # Claude entry wins — richer state
             path = os.path.join(d, name)
             title = "Untitled Conversation"
+            project_id = "default-cli-project"  # fallback
             try:
                 c = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=1.0)
+                # Title from step 0's step_payload
                 row = c.execute(
                     "SELECT step_payload FROM steps WHERE idx=0"
                 ).fetchone()
                 if row and row[0]:
                     for chunk in printable.findall(row[0]):
                         s = chunk.decode("ascii", errors="replace").strip()
-                        # Drop leading "$" markers left by proto varint framing
-                        # Strip leading proto framing bytes rendered as ASCII
-                        # ($, single-char lengths like #, !, ", ', %, etc.)
                         s = _re.sub(r"^[^A-Za-z0-9/]+", "", s)
-                        if uuid_only.match(s):
+                        if len(s) < 8 or uuid_only.match(s):
                             continue
-                        if " " in s and len(s) >= 8:
+                        if " " in s:
                             title = s[:80] + ("…" if len(s) > 80 else "")
+                            break
+                # projectId from trajectory_metadata_blob (proto text scan)
+                row = c.execute(
+                    "SELECT data FROM trajectory_metadata_blob"
+                ).fetchone()
+                if row and row[0]:
+                    for chunk in printable.findall(row[0]):
+                        s = chunk.decode("ascii", errors="replace").strip()
+                        s = _re.sub(r"^[^A-Za-z0-9/]+", "", s)
+                        # Skip the trajectory_id / cascade_id UUIDs and short noise.
+                        if uuid_only.match(s) or len(s) < 5:
+                            continue
+                        if project_hint.match(s):
+                            project_id = s[:120]
                             break
                 c.close()
             except Exception as e:
@@ -413,9 +430,18 @@ def _agy_db_summaries() -> dict:
                 "annotations": {},
                 "workspaces": [],
                 "lastModifiedTime": ts_iso,
-                "trajectoryMetadata": {},
+                # projectId is what the SPA groups by. Without it, entries land
+                # in the "outside-of-project" bucket, invisible under any
+                # named project (including Default project).
+                "trajectoryMetadata": {"projectId": project_id},
             }
     return updates
+
+
+def _shim_cascade_project(entry: dict) -> str:
+    """Pick the projectId for a shim (Gemini/Claude) cascade summary.
+    Uses whatever was captured at StartCascade time, else the default."""
+    return entry.get("projectId") or "default-cli-project"
 
 
 # --- FastMCP deep-research server, launched on demand via /mcp start ---------
@@ -1413,13 +1439,33 @@ async def proxy(request: Request, path: str):
         model_cfg = _model_config_for(user_model)
 
         # StartCascade: return a synthetic cascadeId (the SPA passes its own,
-        # we just echo it back and register).
+        # we just echo it back and register). Also captures projectId from the
+        # request body so this cascade later shows up under the right project
+        # in the sidebar (Default project or a user-created one).
         if "StartCascade" in path:
-            m = UUID_PATTERN.search((body or b"").decode("utf-8", errors="ignore"))
+            body_text = (body or b"").decode("utf-8", errors="ignore")
+            m = UUID_PATTERN.search(body_text)
             cid = m.group(0) if m else str(__import__("uuid").uuid4())
+            # projectId capture — SPA sends trajectoryMetadata.projectId in body.
+            project_id = None
+            try:
+                # Body is grpc-web+json enveloped: 5-byte header + JSON.
+                b2 = body or b""
+                if len(b2) >= 5 and b2[0] in (0x00, 0x80):
+                    plen = int.from_bytes(b2[1:5], "big")
+                    b2 = b2[5:5+plen]
+                doc = json.loads(b2.decode("utf-8"))
+                project_id = (
+                    doc.get("trajectoryMetadata", {}).get("projectId")
+                    or doc.get("projectId")
+                )
+            except Exception:
+                pass
             CLAUDE_CASCADES.setdefault(cid, {
                 "model_label": user_model,
                 "model_config": model_cfg,
+                "vendor": _vendor_for(user_model) or "claude",
+                "projectId": project_id or "default-cli-project",
                 "trajectory_id": str(__import__("uuid").uuid4()),
                 "execution_id": str(__import__("uuid").uuid4()),
                 "created_at": __import__("datetime").datetime.now(
@@ -1429,7 +1475,7 @@ async def proxy(request: Request, path: str):
                 "response": None,
                 "turns": [],
             })
-            logger.info(f"[CLAUDE] StartCascade registered {cid} for {user_model}")
+            logger.info(f"[SHIM] StartCascade registered {cid} for {user_model} projectId={project_id or 'default-cli-project'}")
             _persist_cascade(cid)
             reply = json.dumps({"cascadeId": cid}).encode()
             data_frame = b"\x00" + len(reply).to_bytes(4, "big") + reply
@@ -1841,7 +1887,7 @@ async def proxy(request: Request, path: str):
                     "annotations": {},
                     "workspaces": [],
                     "lastModifiedTime": ts_iso,
-                    "trajectoryMetadata": {},
+                    "trajectoryMetadata": {"projectId": _shim_cascade_project(entry)},
                 }
             # Agy (Gemini) cascades read from ~/.gemini/antigravity/conversations/*.db
             # Claude cids win (already in `updates`); agy .db entries fill the rest.
