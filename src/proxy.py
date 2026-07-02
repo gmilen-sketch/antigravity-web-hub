@@ -1142,9 +1142,30 @@ async def _call_vertex_gemini(model_cfg: dict, prompt: str,
             # Collect function calls in this turn
             fn_calls = [(p["functionCall"]) for p in parts if p.get("functionCall")]
             if not fn_calls:
-                # Final text — concat all text parts
-                text = "".join(p.get("text", "") for p in parts if "text" in p).strip()
-                return text or "[proxy: empty Gemini response]"
+                # Final text — concat all text parts, supporting thoughts/thinking blocks
+                text_parts = []
+                for p in parts:
+                    if "text" in p:
+                        text_parts.append(p["text"])
+                    elif "thought" in p and isinstance(p["thought"], str):
+                        text_parts.append(p["thought"])
+                    elif "thinking" in p and isinstance(p["thinking"], str):
+                        text_parts.append(p["thinking"])
+                text = "".join(text_parts).strip()
+                if not text:
+                    cand0 = cands[0] if cands else {}
+                    reason = cand0.get("finishReason")
+                    msg = cand0.get("finishMessage")
+                    if reason and reason != "STOP":
+                        err_msg = f"[proxy: empty Gemini response, finishReason={reason}"
+                        if msg:
+                            err_msg += f" ({msg})"
+                        err_msg += "]"
+                        logger.warning(f"[GEMINI] Empty response due to {reason}: {msg or ''}")
+                        return err_msg
+                    logger.warning(f"[GEMINI] Empty parts list or no text found. Full candidate: {json.dumps(cand0)}")
+                    return "[proxy: empty Gemini response]"
+                return text
             # Feed back the model's assistant turn with the function-call parts,
             # then send a user turn containing functionResponse parts.
             contents.append({"role": "model", "parts": parts})
@@ -1618,7 +1639,7 @@ async def proxy(request: Request, path: str):
             "X-Accel-Buffering": "no"
         }
         # Include CSRF token cookie to satisfy SPA CSRF verification
-        resp_headers["set-cookie"] = f"csrfToken={os.environ.get('CSRF_TOKEN', '')}; Path=/; SameSite=Lax; Secure"
+        resp_headers["set-cookie"] = f"csrfToken={os.environ.get(\'CSRF_TOKEN\', \'\')}; Path=/; SameSite=Lax; Secure"
         
         accept_header = request.headers.get("accept", "").lower()
         content_type_header = request.headers.get("content-type", "").lower()
@@ -2305,7 +2326,7 @@ async def proxy(request: Request, path: str):
         resp_headers["cache-control"] = "no-cache, no-store, must-revalidate"
         resp_headers["pragma"] = "no-cache"
         resp_headers["expires"] = "0"
-        resp_headers["set-cookie"] = f"csrfToken={os.environ.get('CSRF_TOKEN', '')}; Path=/; SameSite=Lax; Secure"
+        resp_headers["set-cookie"] = f"csrfToken={os.environ.get(\'CSRF_TOKEN\', \'\')}; Path=/; SameSite=Lax; Secure"
         
         content = resp.content
         is_gzipped = resp.headers.get("content-encoding", "") == "gzip"
@@ -2643,7 +2664,7 @@ async def proxy(request: Request, path: str):
                     "te", "trailers", "upgrade", "content-encoding"}
         rh = {k: v for k, v in us_resp.headers.items() if k.lower() not in excluded}
         rh["cache-control"] = "no-cache, no-store, must-revalidate"
-        rh["set-cookie"] = f"csrfToken={os.environ.get('CSRF_TOKEN', '')}; Path=/; SameSite=Lax; Secure"
+        rh["set-cookie"] = f"csrfToken={os.environ.get(\'CSRF_TOKEN\', \'\')}; Path=/; SameSite=Lax; Secure"
 
         raw = us_resp.content
         ctype = (us_resp.headers.get("content-type") or "").lower()
@@ -2807,7 +2828,7 @@ async def proxy(request: Request, path: str):
     resp_headers["cache-control"] = "no-cache, no-store, must-revalidate"
     resp_headers["pragma"] = "no-cache"
     resp_headers["expires"] = "0"
-    resp_headers["set-cookie"] = f"csrfToken={os.environ.get('CSRF_TOKEN', '')}; Path=/; SameSite=Lax; Secure"
+    resp_headers["set-cookie"] = f"csrfToken={os.environ.get(\'CSRF_TOKEN\', \'\')}; Path=/; SameSite=Lax; Secure"
     resp_headers["X-Accel-Buffering"] = "no"
 
     # "Trajectory not found" softening for the three RPCs the SPA fires on
