@@ -1315,12 +1315,16 @@ def _synthesize_claude_state_frame(cascade_id: str, entry: dict, enveloped: bool
         show_progress = is_last and not have_response and (entry.get("tool_status") or entry.get("tool_history"))
         if have_response or show_progress:
             if have_response:
-                planner_text = t["response"]
+                lines = [f"✅ {x}" for x in (entry.get("tool_history") or [])] if is_last else []
+                if lines:
+                    planner_text = "\n\n".join(lines) + "\n\n" + t["response"]
+                else:
+                    planner_text = t["response"]
             else:
                 lines = [f"✅ {x}" for x in (entry.get("tool_history") or [])]
                 if entry.get("tool_status"):
                     lines.append(f"⏳ {entry['tool_status']}")
-                planner_text = "\n".join(lines) or "Thinking…"
+                planner_text = "\n\n".join(lines) or "Thinking…"
             step_status = "CORTEX_STEP_STATUS_DONE" if have_response else "CORTEX_STEP_STATUS_RUNNING"
             step = {
                 "type": "CORTEX_STEP_TYPE_PLANNER_RESPONSE",
