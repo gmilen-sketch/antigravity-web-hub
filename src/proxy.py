@@ -1152,11 +1152,15 @@ async def _call_vertex_gemini(model_cfg: dict, prompt: str,
             for fc in fn_calls:
                 name = fc.get("name", "")
                 args = fc.get("args") or {}
+                call_id = fc.get("id")
                 if tool_calls_made >= MAX_TOOL_CALLS_PER_CASCADE:
-                    fn_response_parts.append({"functionResponse": {
+                    fr = {
                         "name": name,
                         "response": {"content": "[tool cap reached — refusing more tool calls]"},
-                    }})
+                    }
+                    if call_id:
+                        fr["id"] = call_id
+                    fn_response_parts.append({"functionResponse": fr})
                     continue
                 tool_calls_made += 1
                 if entry is not None:
@@ -1167,9 +1171,13 @@ async def _call_vertex_gemini(model_cfg: dict, prompt: str,
                     out = await _execute_tool(name, args)
                 except Exception as ex:
                     out = f"[tool exception: {ex}]"
-                fn_response_parts.append({"functionResponse": {
-                    "name": name, "response": {"content": out},
-                }})
+                fr = {
+                    "name": name,
+                    "response": {"content": out},
+                }
+                if call_id:
+                    fr["id"] = call_id
+                fn_response_parts.append({"functionResponse": fr})
             if entry is not None:
                 entry["tool_status"] = None
             contents.append({"role": "user", "parts": fn_response_parts})
