@@ -2219,8 +2219,8 @@ async def proxy(request: Request, path: str):
         console.log('[folder-picker] populated input with', path);
       } else {
         // No input to populate — surface the name so the user can copy it.
-        alert('Selected folder: ' + name +
-              '\n\nNote: the web hub can\'t auto-map a browser-picked folder ' +
+        alert('Selected folder: ' + name + '. ' +
+              'Note: the web hub cannot auto-map a browser-picked folder ' +
               'to a VM path. Type the target path into the popover manually, ' +
               'or use gcloud scp to upload.');
       }
