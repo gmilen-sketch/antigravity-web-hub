@@ -1,0 +1,20 @@
+.env
+*.pyc
+__pycache__/
+.venv/
+venv/
+node_modules/
+package-lock.json
+
+# Anything auth-shaped
+*.token
+*.key
+*credentials*.json
+oauth-token*
+ADC*
+
+# Runtime state that shouldn't be published
+claude_cascades/
+*.db
+*.log
+brain/

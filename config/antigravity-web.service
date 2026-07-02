@@ -1,0 +1,16 @@
+[Unit]
+Description=Antigravity Web Hub (Claude+Gemini reverse-proxy)
+After=network.target
+
+[Service]
+Type=simple
+# Set these three at install time (see scripts/install.sh):
+User=REPLACE_USER
+WorkingDirectory=/home/REPLACE_USER
+EnvironmentFile=/etc/antigravity-web.env
+ExecStart=/home/REPLACE_USER/.gemini/antigravity/bin/start_hub.sh
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
