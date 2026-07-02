@@ -7,7 +7,9 @@ GCP VM, with two extensions the desktop app doesn't ship:
   are plumbed in via a proxy shim that calls Vertex Anthropic directly,
   bypassing agy's Gemini-only allowlist. Full multi-turn history, web browsing
   tools (search + URL fetch, SSRF-guarded), and disk persistence so
-  conversations survive service restarts.
+  conversations survive service restarts. See
+  [docs/claude-shim.md](docs/claude-shim.md) for what the shim is and
+  how it works.
 - **On-demand FastMCP `deep_research` tool.** Type `/mcp start` in chat to
   spawn a Python FastMCP server (Streamable HTTP + SSE) that runs a
   Claude-Opus-powered research loop with `standard` and `max` modes. When
@@ -107,6 +109,7 @@ model dropdown containing **Gemini 3.5 Flash**, **Claude Opus 4.8**, and
 ## Docs
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — component diagram
+- [docs/claude-shim.md](docs/claude-shim.md) — **what the Vertex Claude shim is and how it works** (start here if you're wondering how Claude got into a Gemini-only UI)
 - [docs/request-flow.md](docs/request-flow.md) — end-to-end walkthrough of one turn
 - [docs/mcp.md](docs/mcp.md) — adding your own MCP tools
 - [docs/troubleshooting.md](docs/troubleshooting.md) — known failure modes

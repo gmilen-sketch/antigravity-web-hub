@@ -136,3 +136,5 @@ protocol.
 7. Meanwhile, the SPA's `StreamAgentStateUpdates(cid)` stream (long-lived, held open in proxy.py) polls `entry` every 500 ms; on any change it yields a synthetic `CascadeAgentState` frame back over nginx → LB → browser → React SPA renders the reply.
 
 For a byte-level walkthrough of a single turn, see [docs/request-flow.md](docs/request-flow.md).
+For a focused explanation of what a "shim" is and how the Vertex Claude
+interception + translation works, see [docs/claude-shim.md](docs/claude-shim.md).
