@@ -8,7 +8,7 @@ import time
 import json
 import re
 import os
-
+import asyncio
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("reverse_proxy")
@@ -596,6 +596,75 @@ CLAUDE_TOOLS = [
             "required": ["query"],
         },
     },
+    {
+        "name": "run_command",
+        "description": (
+            "Execute a bash shell command on the local VM machine and return its exit code, stdout, and stderr. "
+            "Use this to compile code, run test scripts, run build commands, check system status, etc."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "command": {"type": "string", "description": "The exact bash shell command to execute."},
+                "cwd": {"type": "string", "description": "Optional. The working directory to execute the command in. Defaults to the user's home directory."}
+            },
+            "required": ["command"],
+        },
+    },
+    {
+        "name": "write_file",
+        "description": (
+            "Write the complete content string to a file at the specified absolute path on the local VM. "
+            "Parent directories will be created automatically if they do not exist."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "The absolute or expanded path of the file to write to (e.g. '/path/to/file.txt' or '~/file.txt')."},
+                "content": {"type": "string", "description": "The complete file contents to write."}
+            },
+            "required": ["path", "content"],
+        },
+    },
+    {
+        "name": "read_file",
+        "description": (
+            "Read and return the complete content of a file at the specified absolute or expanded path on the local VM."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "The absolute or expanded path of the file to read (e.g. '/path/to/file.txt' or '~/file.txt')."},
+            },
+            "required": ["path"],
+        },
+    },
+    {
+        "name": "list_dir",
+        "description": (
+            "List all files and subdirectories within the specified directory path on the local VM."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "The absolute or expanded directory path to list. Defaults to home directory if not provided."}
+            },
+        },
+    },
+    {
+        "name": "grep_search",
+        "description": (
+            "Search for a text pattern or string query inside files recursively within a target directory path on the local VM."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "description": "The absolute or expanded directory path to search within recursively."},
+                "query": {"type": "string", "description": "The query string or regex pattern to search for."}
+            },
+            "required": ["query"],
+        },
+    },
 ]
 
 
@@ -765,6 +834,144 @@ async def _web_search(query: str) -> str:
     return "\n".join(lines)
 
 
+async def _run_command(command: str, cwd: str | None = None) -> str:
+    if not command:
+        return "[run_command: empty command]"
+    if not cwd:
+        cwd = os.path.expanduser("~")
+    try:
+        proc = await asyncio.create_subprocess_shell(
+            command,
+            cwd=cwd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=60.0)
+        except asyncio.TimeoutError:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            return "[run_command error: execution timed out after 60 seconds]"
+        
+        stdout_str = stdout.decode("utf-8", errors="replace")
+        stderr_str = stderr.decode("utf-8", errors="replace")
+        
+        res = []
+        if proc.returncode is not None:
+            res.append(f"Exit code: {proc.returncode}")
+        if stdout_str:
+            res.append(f"--- Standard Output ---\n{stdout_str}")
+        if stderr_str:
+            res.append(f"--- Standard Error ---\n{stderr_str}")
+        if not stdout_str and not stderr_str:
+            res.append("(no output)")
+        return "\n\n".join(res)
+    except Exception as e:
+        return f"[run_command error: {e}]"
+
+
+async def _write_file(path: str, content: str) -> str:
+    if not path:
+        return "[write_file: empty path]"
+    try:
+        path = os.path.abspath(os.path.expanduser(path))
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        def do_write():
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(content)
+        await asyncio.to_thread(do_write)
+        return f"Successfully wrote {len(content)} characters to {path}"
+    except Exception as e:
+        return f"[write_file error: {e}]"
+
+
+async def _read_file(path: str) -> str:
+    if not path:
+        return "[read_file: empty path]"
+    try:
+        path = os.path.abspath(os.path.expanduser(path))
+        if not os.path.exists(path):
+            return f"[read_file error: file not found at {path}]"
+        if os.path.isdir(path):
+            return f"[read_file error: {path} is a directory, not a file]"
+        def do_read():
+            with open(path, "r", encoding="utf-8", errors="replace") as f:
+                return f.read()
+        return await asyncio.to_thread(do_read)
+    except Exception as e:
+        return f"[read_file error: {e}]"
+
+
+async def _list_dir(path: str) -> str:
+    if not path:
+        path = os.path.expanduser("~")
+    try:
+        path = os.path.abspath(os.path.expanduser(path))
+        if not os.path.exists(path):
+            return f"[list_dir error: path not found at {path}]"
+        if not os.path.isdir(path):
+            return f"[list_dir error: {path} is a file, not a directory]"
+        def do_list():
+            items = os.listdir(path)
+            lines = []
+            for item in sorted(items):
+                full = os.path.join(path, item)
+                if os.path.isdir(full):
+                    lines.append(f"[DIR]  {item}/")
+                else:
+                    try:
+                        sz = os.path.getsize(full)
+                    except Exception:
+                        sz = 0
+                    lines.append(f"[FILE] {item} ({sz} bytes)")
+            return lines
+        lines = await asyncio.to_thread(do_list)
+        if not lines:
+            return f"Directory {path} is empty."
+        return f"Contents of {path}:\n" + "\n".join(lines)
+    except Exception as e:
+        return f"[list_dir error: {e}]"
+
+
+async def _grep_search(path: str, query: str) -> str:
+    if not path:
+        path = os.path.expanduser("~")
+    if not query:
+        return "[grep_search: empty query]"
+    try:
+        path = os.path.abspath(os.path.expanduser(path))
+        if not os.path.exists(path):
+            return f"[grep_search error: path not found at {path}]"
+        cmd = ["grep", "-rn", "--exclude-dir=.git", "--exclude-dir=node_modules", query, path]
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30.0)
+        except asyncio.TimeoutError:
+            try:
+                proc.kill()
+            except Exception:
+                pass
+            return "[grep_search error: search timed out after 30 seconds]"
+        stdout_str = stdout.decode("utf-8", errors="replace")
+        lines = stdout_str.splitlines()
+        if not lines:
+            return f"No matches found for {query!r} in {path}"
+        output_limit = 150
+        res_lines = lines[:output_limit]
+        res = f"Found {len(lines)} matches for {query!r} in {path}:\n" + "\n".join(res_lines)
+        if len(lines) > output_limit:
+            res += f"\n... (truncated {len(lines) - output_limit} additional matches)"
+        return res
+    except Exception as e:
+        return f"[grep_search error: {e}]"
+
+
 async def _execute_tool(name: str, inp: dict) -> str:
     if name == "fetch_url":
         url = (inp or {}).get("url") or ""
@@ -776,6 +983,24 @@ async def _execute_tool(name: str, inp: dict) -> str:
         q = (inp or {}).get("query") or ""
         mode = (inp or {}).get("mode") or "standard"
         return await _call_mcp_deep_research(q, mode)
+    if name == "run_command":
+        cmd = (inp or {}).get("command") or ""
+        cwd = (inp or {}).get("cwd") or None
+        return await _run_command(cmd, cwd)
+    if name == "write_file":
+        path = (inp or {}).get("path") or ""
+        content = (inp or {}).get("content") or ""
+        return await _write_file(path, content)
+    if name == "read_file":
+        path = (inp or {}).get("path") or ""
+        return await _read_file(path)
+    if name == "list_dir":
+        path = (inp or {}).get("path") or ""
+        return await _list_dir(path)
+    if name == "grep_search":
+        path = (inp or {}).get("path") or ""
+        q = (inp or {}).get("query") or ""
+        return await _grep_search(path, q)
     return f"[unknown tool: {name}]"
 
 
@@ -788,6 +1013,16 @@ def _describe_tool(tu: dict) -> str:
         return f"Searching: {(inp.get('query') or '')[:120]}"
     if name == "deep_research":
         return f"Deep research ({inp.get('mode', 'standard')}): {(inp.get('query') or '')[:100]}"
+    if name == "run_command":
+        return f"Executing: {(inp.get('command') or '')[:100]}"
+    if name == "write_file":
+        return f"Writing file: {(inp.get('path') or '')[:120]}"
+    if name == "read_file":
+        return f"Reading file: {(inp.get('path') or '')[:120]}"
+    if name == "list_dir":
+        return f"Listing directory: {(inp.get('path') or '')[:120]}"
+    if name == "grep_search":
+        return f"Searching files for: {(inp.get('query') or '')[:100]}"
     return f"Running {name}"
 
 
@@ -856,6 +1091,16 @@ def _describe_tool_gemini(name: str, args: dict) -> str:
         return f"Searching: {(args.get('query') or '')[:120]}"
     if name == "deep_research":
         return f"Deep research ({args.get('mode','standard')}): {(args.get('query') or '')[:100]}"
+    if name == "run_command":
+        return f"Executing: {(args.get('command') or '')[:100]}"
+    if name == "write_file":
+        return f"Writing file: {(args.get('path') or '')[:120]}"
+    if name == "read_file":
+        return f"Reading file: {(args.get('path') or '')[:120]}"
+    if name == "list_dir":
+        return f"Listing directory: {(args.get('path') or '')[:120]}"
+    if name == "grep_search":
+        return f"Searching files for: {(args.get('query') or '')[:100]}"
     return f"Running {name}"
 
 
