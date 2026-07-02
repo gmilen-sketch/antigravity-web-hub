@@ -2179,6 +2179,57 @@ async def proxy(request: Request, path: str):
     }
   }, true);
 
+  // --- Folder picker shim (File System Access API) --------------------
+  // The SPA's "Add Folder" button expects a desktop Electron file dialog
+  // that isn't wired in the web hub. Intercept the click and call
+  // window.showDirectoryPicker() (Chromium-only). Populate the popover's
+  // nearby text input with the picked folder's name so the SPA's
+  // existing "type a path" flow completes the workspace add.
+  document.addEventListener('click', async (e) => {
+    if (e.__folderShimHandled) return;
+    let btn = e.target;
+    while (btn && btn.tagName !== 'BUTTON' && btn !== document.body) btn = btn.parentElement;
+    if (!btn || btn.tagName !== 'BUTTON') return;
+    const txt = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+    if (!/add folder|select folder|browse|choose folder/.test(txt)) return;
+    if (typeof window.showDirectoryPicker !== 'function') {
+      console.warn('[folder-picker] showDirectoryPicker unavailable in this browser');
+      return;
+    }
+    e.__folderShimHandled = true;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    try {
+      const dh = await window.showDirectoryPicker({mode:'read'});
+      const name = dh.name;
+      console.log('[folder-picker] user picked:', name);
+      // Find the nearest visible text input inside the popover and populate it
+      const popover = btn.closest('[role="dialog"],[role="menu"],[role="listbox"]') || document.body;
+      const input = popover.querySelector('input[type="text"], input:not([type])') ||
+                    document.querySelector('input[type="text"]:not([disabled])');
+      if (input) {
+        const proto = Object.getPrototypeOf(input);
+        const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+        // Best-effort VM-side path — user can edit if needed
+        const path = `/home/${(window.__user || '') || 'user'}/projects/${name}`;
+        (setter || ((v)=>{input.value = v;})).call(input, path);
+        input.dispatchEvent(new Event('input', {bubbles:true}));
+        input.dispatchEvent(new Event('change', {bubbles:true}));
+        input.focus();
+        console.log('[folder-picker] populated input with', path);
+      } else {
+        // No input to populate — surface the name so the user can copy it.
+        alert('Selected folder: ' + name +
+              '\n\nNote: the web hub can\'t auto-map a browser-picked folder ' +
+              'to a VM path. Type the target path into the popover manually, ' +
+              'or use gcloud scp to upload.');
+      }
+    } catch (err) {
+      if (err && err.name === 'AbortError') return; // user canceled
+      console.error('[folder-picker] error:', err);
+    }
+  }, true);
+
   // 2) Watch chip for SPA-driven transitions. We only sync FROM chip TO state
   //    when a user click happened recently (within 5s); otherwise we treat
   //    localStorage as source-of-truth and force the chip to match. This
