@@ -554,7 +554,7 @@ async def _call_mcp_deep_research(query: str, mode: str) -> str:
         return f"[error] deep_research call failed: {e}"
 
 
-MAX_TOOL_TURNS = 8
+MAX_TOOL_TURNS = 15
 MAX_TOOL_CALLS_PER_CASCADE = 20
 FETCH_TIMEOUT_S = 15.0
 FETCH_MAX_CHARS = 40_000
