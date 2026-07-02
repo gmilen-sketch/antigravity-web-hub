@@ -9,11 +9,6 @@ import json
 import re
 import os
 
-
-def _die(msg: str):
-    """Fail fast when a required environment variable is missing."""
-    raise RuntimeError(msg)
-
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("reverse_proxy")
@@ -327,6 +322,82 @@ def _cascade_summary(cid: str, entry: dict) -> str:
             line = p.strip().splitlines()[0].strip()
             return (line[:60] + "…") if len(line) > 60 else line
     return "New Claude conversation"
+
+
+AGY_CONVO_DIRS = [
+    os.path.expanduser("~/.gemini/antigravity/conversations"),
+    os.path.expanduser("~/.gemini/antigravity-cli/conversations"),
+]
+
+
+def _agy_db_summaries() -> dict:
+    """Enumerate agy's SQLite conversation DBs and produce synthetic summary
+    entries so Gemini cascades appear in the sidebar (agy's own jetbox
+    summary store is unused/uninitialized in standalone mode).
+
+    Title extraction: step 0's step_payload is a proto blob. The user's
+    prompt text is embedded as a length-prefixed string; we heuristically
+    pull the first readable run of printable characters that contains a
+    space (real prose) and isn't a UUID/hex string."""
+    import sqlite3, re as _re
+    updates: dict = {}
+    uuid_only = _re.compile(r"^[0-9a-f-]+$", _re.I)
+    printable = _re.compile(rb"[\x20-\x7e]{10,300}")
+    for d in AGY_CONVO_DIRS:
+        if not os.path.isdir(d):
+            continue
+        for name in os.listdir(d):
+            if not name.endswith(".db"):
+                continue
+            cid = name[:-3]
+            if not UUID_PATTERN.fullmatch(cid):
+                continue
+            if cid in CLAUDE_CASCADES:
+                continue  # Claude entry wins — richer state
+            path = os.path.join(d, name)
+            title = "Untitled Conversation"
+            try:
+                c = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=1.0)
+                row = c.execute(
+                    "SELECT step_payload FROM steps WHERE idx=0"
+                ).fetchone()
+                if row and row[0]:
+                    for chunk in printable.findall(row[0]):
+                        s = chunk.decode("ascii", errors="replace").strip()
+                        # Drop leading "$" markers left by proto varint framing
+                        # Strip leading proto framing bytes rendered as ASCII
+                        # ($, single-char lengths like #, !, ", ', %, etc.)
+                        s = _re.sub(r"^[^A-Za-z0-9/]+", "", s)
+                        if uuid_only.match(s):
+                            continue
+                        if " " in s and len(s) >= 8:
+                            title = s[:80] + ("…" if len(s) > 80 else "")
+                            break
+                c.close()
+            except Exception as e:
+                logger.debug(f"[jetbox] {path}: {e}")
+            try:
+                from datetime import datetime, timezone
+                ts_iso = datetime.fromtimestamp(
+                    os.path.getmtime(path), tz=timezone.utc
+                ).isoformat().replace("+00:00", "Z")
+            except Exception:
+                ts_iso = None
+            updates[cid] = {
+                "source": 0,
+                "cascadeId": cid,
+                "conversationId": cid,
+                "summary": title,
+                "trajectoryType": 1,
+                "notFullyIdle": False,
+                "waitingSteps": [],
+                "status": 0,
+                "annotations": {},
+                "workspaces": [],
+                "lastModifiedTime": ts_iso,
+                "trajectoryMetadata": {},
+            }
+    return updates
 
 
 # --- FastMCP deep-research server, launched on demand via /mcp start ---------
@@ -691,7 +762,7 @@ async def _vertex_post(model_cfg: dict, body: dict, timeout_s: float = 120.0) ->
     token = get_valid_access_token()
     if not token:
         raise RuntimeError("no ADC token available")
-    proj = os.environ.get("GOOGLE_CLOUD_PROJECT") or _die("GOOGLE_CLOUD_PROJECT env var required")
+    proj = os.environ.get("GOOGLE_CLOUD_PROJECT", "${GOOGLE_CLOUD_PROJECT}")
     reg = model_cfg["region"]; m = model_cfg["model"]
     base = "aiplatform.googleapis.com" if reg == "global" else f"{reg}-aiplatform.googleapis.com"
     loc = "global" if reg == "global" else reg
@@ -1603,7 +1674,8 @@ async def proxy(request: Request, path: str):
             # `.waitingSteps`, `.workspaces`, `.status`. Filter rule for the
             # sidebar drops entries that are archived, pinned, forks, subagents
             # (parentConversationId), or trajectoryType===22.
-            updates = {}
+            # Claude cascades (from in-memory + persisted state on /mnt/data)
+            updates: dict = {}
             for cid, entry in CLAUDE_CASCADES.items():
                 if not entry.get("turns"):
                     continue
@@ -1628,24 +1700,38 @@ async def proxy(request: Request, path: str):
                     "lastModifiedTime": ts_iso,
                     "trajectoryMetadata": {},
                 }
+            # Agy (Gemini) cascades read from ~/.gemini/antigravity/conversations/*.db
+            # Claude cids win (already in `updates`); agy .db entries fill the rest.
+            for cid, u in _agy_db_summaries().items():
+                updates.setdefault(cid, u)
             payload = json.dumps({"updates": updates, "deletes": []}).encode()
             if "grpc-web" in ctype or "connect+" in ctype or "grpc+" in ctype:
                 return b"\x00" + len(payload).to_bytes(4, "big") + payload
             return payload
+        def _snap_all():
+            # Snapshot both sources so the poller re-emits on either changing.
+            claude = tuple(sorted(CLAUDE_CASCADES.keys()))
+            titles = {c: _cascade_summary(c, e) for c, e in CLAUDE_CASCADES.items()}
+            agy: tuple = ()
+            for d in AGY_CONVO_DIRS:
+                if os.path.isdir(d):
+                    try:
+                        agy = agy + tuple(sorted(
+                            (n, int(os.path.getmtime(os.path.join(d, n))))
+                            for n in os.listdir(d) if n.endswith(".db")
+                        ))
+                    except Exception:
+                        pass
+            return (claude, tuple(sorted(titles.items())), agy)
         async def hold_open():
             yield _build_summary_frame()
-            # Re-emit whenever the set of cascades changes (new ones appear,
-            # titles update). Cheap poll — most sessions have few cascades.
-            last_snap: tuple = tuple(sorted(CLAUDE_CASCADES.keys()))
-            last_titles: dict = {c: _cascade_summary(c, e) for c, e in CLAUDE_CASCADES.items()}
+            last = _snap_all()
             while True:
                 await asyncio.sleep(2)
-                snap = tuple(sorted(CLAUDE_CASCADES.keys()))
-                titles = {c: _cascade_summary(c, e) for c, e in CLAUDE_CASCADES.items()}
-                if snap != last_snap or titles != last_titles:
+                cur = _snap_all()
+                if cur != last:
                     yield _build_summary_frame()
-                    last_snap = snap
-                    last_titles = titles
+                    last = cur
         rct = ctype if ("grpc-web" in ctype or "connect" in ctype) else "application/grpc-web+json"
         return StreamingResponse(
             hold_open(),
@@ -1700,7 +1786,7 @@ async def proxy(request: Request, path: str):
         fwd_headers["authorization"] = f"Bearer {token}"
         fwd_headers["host"] = "cloudcode-pa.googleapis.com"
         fwd_headers["x-goog-user-project"] = os.environ.get(
-            "GOOGLE_CLOUD_PROJECT", os.environ.get("GOOGLE_CLOUD_PROJECT", "")
+            "GOOGLE_CLOUD_PROJECT", "${GOOGLE_CLOUD_PROJECT}"
         )
 
         upstream_url = f"https://cloudcode-pa.googleapis.com/{path}"
