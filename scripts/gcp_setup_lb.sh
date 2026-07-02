@@ -33,8 +33,22 @@ echo "→ Reserving static IP…"
 gcloud --project=$PROJECT compute addresses describe ${NAME_PREFIX}-ip --global 2>/dev/null \
   || gcloud --project=$PROJECT compute addresses create ${NAME_PREFIX}-ip --global --ip-version=IPV4
 IP=$(gcloud --project=$PROJECT compute addresses describe ${NAME_PREFIX}-ip --global --format='value(address)')
-HOST="${IP}.nip.io"
-echo "  reserved IP=$IP  hostname=$HOST"
+
+# If PUBLIC_DOMAIN is set in .env, use that (real domain, no cert warnings once
+# a Google-managed cert is issued for it). Otherwise fall back to <ip>.nip.io.
+if [ -n "${PUBLIC_DOMAIN:-}" ]; then
+  HOST="$PUBLIC_DOMAIN"
+  echo "  reserved IP=$IP  hostname=$HOST (custom domain)"
+  echo
+  echo "  ⚠  BEFORE THIS CAN VALIDATE: add a DNS A record"
+  echo "     $HOST.  A  $IP"
+  echo "     in whatever DNS you use for the parent zone."
+  echo "     Google-managed cert provisioning will loop until the A record resolves."
+  echo
+else
+  HOST="${IP}.nip.io"
+  echo "  reserved IP=$IP  hostname=$HOST"
+fi
 
 echo "→ Firewall: allow LB health check + IAP tunnel to :8080…"
 # LB health check + Google Front Ends: 35.191.0.0/16, 130.211.0.0/22
@@ -75,16 +89,28 @@ gcloud --project=$PROJECT compute backend-services add-backend ${NAME_PREFIX}-bs
 gcloud --project=$PROJECT compute backend-services update ${NAME_PREFIX}-bs --global --timeout=86400
 
 echo "→ Google-managed SSL cert for $HOST…"
-gcloud --project=$PROJECT compute ssl-certificates describe ${NAME_PREFIX}-cert --global 2>/dev/null \
-  || gcloud --project=$PROJECT compute ssl-certificates create ${NAME_PREFIX}-cert \
+# Name the cert per-hostname so changing domain doesn't collide with the
+# old cert (Google-managed certs are immutable — you can't change domains).
+CERT_NAME="${NAME_PREFIX}-cert-$(echo "$HOST" | tr '.' '-' | tr '[:upper:]' '[:lower:]' | cut -c1-50)"
+gcloud --project=$PROJECT compute ssl-certificates describe $CERT_NAME --global 2>/dev/null \
+  || gcloud --project=$PROJECT compute ssl-certificates create $CERT_NAME \
      --global --domains=$HOST
 
-echo "→ URL map, target HTTPS proxy, forwarding rule…"
+echo "→ URL map, target HTTPS proxy (using cert $CERT_NAME), forwarding rule…"
 gcloud --project=$PROJECT compute url-maps describe ${NAME_PREFIX}-um 2>/dev/null \
   || gcloud --project=$PROJECT compute url-maps create ${NAME_PREFIX}-um --default-service=${NAME_PREFIX}-bs
-gcloud --project=$PROJECT compute target-https-proxies describe ${NAME_PREFIX}-tp 2>/dev/null \
-  || gcloud --project=$PROJECT compute target-https-proxies create ${NAME_PREFIX}-tp \
-     --ssl-certificates=${NAME_PREFIX}-cert --url-map=${NAME_PREFIX}-um
+if gcloud --project=$PROJECT compute target-https-proxies describe ${NAME_PREFIX}-tp 2>/dev/null; then
+  # Update cert if it's different from current binding
+  CUR_CERT=$(gcloud --project=$PROJECT compute target-https-proxies describe ${NAME_PREFIX}-tp --format='value(sslCertificates)' | tr ',' '\n' | xargs -n1 basename)
+  if [ "$CUR_CERT" != "$CERT_NAME" ]; then
+    echo "  swapping cert on target proxy: $CUR_CERT → $CERT_NAME"
+    gcloud --project=$PROJECT compute target-https-proxies update ${NAME_PREFIX}-tp \
+      --ssl-certificates=$CERT_NAME
+  fi
+else
+  gcloud --project=$PROJECT compute target-https-proxies create ${NAME_PREFIX}-tp \
+     --ssl-certificates=$CERT_NAME --url-map=${NAME_PREFIX}-um
+fi
 gcloud --project=$PROJECT compute forwarding-rules describe ${NAME_PREFIX}-fr --global 2>/dev/null \
   || gcloud --project=$PROJECT compute forwarding-rules create ${NAME_PREFIX}-fr \
      --global --address=${NAME_PREFIX}-ip --target-https-proxy=${NAME_PREFIX}-tp --ports=443

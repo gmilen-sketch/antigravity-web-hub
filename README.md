@@ -112,6 +112,7 @@ model dropdown containing **Gemini 3.5 Flash**, **Claude Opus 4.8**, and
 - [docs/claude-shim.md](docs/claude-shim.md) — **what the Vertex Claude shim is and how it works** (start here if you're wondering how Claude got into a Gemini-only UI)
 - [docs/request-flow.md](docs/request-flow.md) — end-to-end walkthrough of one turn
 - [docs/mcp.md](docs/mcp.md) — adding your own MCP tools
+- [docs/custom-domain.md](docs/custom-domain.md) — swap `<ip>.nip.io` for a real DNS domain (no SSL warnings)
 - [docs/troubleshooting.md](docs/troubleshooting.md) — known failure modes
 
 ## Contributions & scope
