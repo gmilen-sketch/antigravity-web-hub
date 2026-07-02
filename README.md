@@ -3,13 +3,16 @@
 Run [Google Antigravity's](https://antigravity.google/) web hub on a headless
 GCP VM, with two extensions the desktop app doesn't ship:
 
-- **Vertex Claude models in the dropdown.** Claude Opus 4.8 and Claude Fable 5
-  are plumbed in via a proxy shim that calls Vertex Anthropic directly,
-  bypassing agy's Gemini-only allowlist. Full multi-turn history, web browsing
-  tools (search + URL fetch, SSRF-guarded), and disk persistence so
-  conversations survive service restarts. See
-  [docs/claude-shim.md](docs/claude-shim.md) for what the shim is and
-  how it works.
+- **All models routed through Vertex.** The shim now serves both Gemini
+  (`3.5 Flash`, `3.1 Flash Lite Preview`, `3.1 Pro`) and Anthropic (`Claude
+  Opus 4.8`, `Claude Fable 5`) via Vertex `generateContent` / `rawPredict`.
+  Gemini is the primary path — agy's own Gemini support is broken in
+  external builds (`GetChatMessage is unimplemented`), so we bypass it
+  entirely. Multi-turn history, web browsing tools (search + URL fetch,
+  SSRF-guarded), and disk persistence across restarts apply to both
+  vendors. See [docs/claude-shim.md](docs/claude-shim.md) for how the
+  shim works (same pattern for Gemini and Claude — dispatch is by
+  `vendor`).
 - **On-demand FastMCP `deep_research` tool.** Type `/mcp start` in chat to
   spawn a Python FastMCP server (Streamable HTTP + SSE) that runs a
   Claude-Opus-powered research loop with `standard` and `max` modes. When

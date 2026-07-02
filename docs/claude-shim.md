@@ -1,3 +1,11 @@
+# The Vertex shim (Gemini + Claude)
+
+*Note: originally written when only Claude was shimmed; the same design now
+covers Gemini. Dispatch by `vendor` field on each cascade entry; call
+either `_call_vertex_gemini` (`generateContent`) or `_call_vertex_claude`
+(`rawPredict`). Everything else — SPA interception, multi-turn history,
+persistence, tool loop, sidebar hookup — is vendor-agnostic.*
+
 # The Vertex Claude shim
 
 ## What "shim" means

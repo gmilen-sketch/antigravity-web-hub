@@ -219,24 +219,42 @@ def _varint_field(field: int, value: int) -> bytes:
 # descriptors) so protojson unmarshal accepts them. Actual upstream model is
 # forced by --override_model_name=gemini-3.5-flash regardless of which is picked.
 DROPDOWN_MODELS = [
-    # Gemini 3.5 Flash routes through agy. Claude Opus 4.8 and Fable 5 are
-    # served by a Vertex-direct shim in this proxy (see CLAUDE_MODELS below).
-    ("Gemini 3.5 Flash",   312),  # MODEL_GOOGLE_GEMINI_2_5_FLASH — agy default
-    ("Claude Opus 4.8",    290),  # cosmetic enum; label is what routes
-    ("Claude Fable 5",     340),  # cosmetic enum; label is what routes
+    # ALL models route through our Vertex shim now — agy's Gemini path is
+    # broken in the "external" build (GetChatMessage is unimplemented).
+    # Order = display order in the dropdown. Gemini first = default.
+    ("Gemini 3.5 Flash",              312),  # cosmetic enum; label is what routes
+    ("Gemini 3.1 Flash Lite Preview", 314),
+    ("Gemini 3.1 Pro",                313),
+    ("Claude Opus 4.8",               290),
+    ("Claude Fable 5",                340),
 ]
 DEFAULT_MODEL_ENUM = 312
 
-# Model labels routed via Vertex direct (bypasses agy). The value is the
-# Vertex publisher model ID and region. Called with the ADC token.
+# Model labels routed via Vertex direct. The value is the Vertex publisher
+# model ID and region. Called with the ADC token.
+GEMINI_MODELS = {
+    "Gemini 3.5 Flash":              {"publisher": "google", "model": "gemini-3.5-flash",              "region": "global"},
+    "Gemini 3.1 Flash Lite Preview": {"publisher": "google", "model": "gemini-3.1-flash-lite-preview", "region": "global"},
+    "Gemini 3.1 Pro":                {"publisher": "google", "model": "gemini-3.1-pro-preview",         "region": "global"},
+}
 CLAUDE_MODELS = {
     "Claude Opus 4.8": {"publisher": "anthropic", "model": "claude-opus-4-8", "region": "global"},
     "Claude Fable 5":  {"publisher": "anthropic", "model": "claude-fable-5",  "region": "global"},
 }
 
-# In-memory state for Claude cascades. cascade_id -> {status, prompt, response,
-# model_label, model_config, trajectory_id, created_at, prompt_step_id,
-# response_step_id, ...}
+def _vendor_for(label: str) -> str | None:
+    if label in GEMINI_MODELS: return "gemini"
+    if label in CLAUDE_MODELS: return "claude"
+    return None
+
+def _model_config_for(label: str) -> dict | None:
+    return GEMINI_MODELS.get(label) or CLAUDE_MODELS.get(label)
+
+SHIM_MODELS = {**GEMINI_MODELS, **CLAUDE_MODELS}
+
+# In-memory state for shim cascades (both Gemini and Claude). cid -> entry.
+# Historical name kept as CLAUDE_CASCADES for backward-compat with persisted
+# JSON files; entries now carry a "vendor" field ("gemini" or "claude").
 CLAUDE_CASCADES: dict = {}
 
 # --- Persistent storage for Claude cascades ---------------------------------
@@ -758,15 +776,20 @@ def _extract_text(content: list) -> str:
     return ("".join(text_parts) or "".join(thinking_parts) or "").strip()
 
 
-async def _vertex_post(model_cfg: dict, body: dict, timeout_s: float = 120.0) -> dict:
+async def _vertex_post(model_cfg: dict, body: dict, timeout_s: float = 120.0,
+                       method: str = "rawPredict") -> dict:
+    """POST to Vertex publisher-models. `method` picks the endpoint suffix:
+    'rawPredict' for Anthropic, 'generateContent' for Gemini."""
     token = get_valid_access_token()
     if not token:
         raise RuntimeError("no ADC token available")
-    proj = os.environ.get("GOOGLE_CLOUD_PROJECT", "${GOOGLE_CLOUD_PROJECT}")
+    proj = (os.environ.get("GOOGLE_CLOUD_PROJECT")
+            or _die("GOOGLE_CLOUD_PROJECT env var required"))
     reg = model_cfg["region"]; m = model_cfg["model"]
+    publisher = model_cfg.get("publisher", "anthropic")
     base = "aiplatform.googleapis.com" if reg == "global" else f"{reg}-aiplatform.googleapis.com"
     loc = "global" if reg == "global" else reg
-    url = f"https://{base}/v1/projects/{proj}/locations/{loc}/publishers/anthropic/models/{m}:rawPredict"
+    url = f"https://{base}/v1/projects/{proj}/locations/{loc}/publishers/{publisher}/models/{m}:{method}"
     hdrs = {
         "Authorization": f"Bearer {token}",
         "x-goog-user-project": proj,
@@ -777,6 +800,121 @@ async def _vertex_post(model_cfg: dict, body: dict, timeout_s: float = 120.0) ->
     if r.status_code != 200:
         raise RuntimeError(f"Vertex {r.status_code}: {r.text[:400]}")
     return r.json()
+
+
+# --- Gemini native (Vertex generateContent) --------------------------------
+# Gemini uses `contents` / `parts` schema and functionDeclarations for tools.
+# We translate CLAUDE_TOOLS into Gemini shape at call time so tool code
+# stays vendor-neutral.
+
+def _gemini_tool_declarations() -> list:
+    """Translate CLAUDE_TOOLS (+ optional deep_research) into Gemini's
+    tools.functionDeclarations schema. Same names/descriptions/params."""
+    decls = []
+    tools = list(CLAUDE_TOOLS)
+    if _mcp_running():
+        tools.append(DEEP_RESEARCH_TOOL_SCHEMA)
+    for t in tools:
+        decls.append({
+            "name": t["name"],
+            "description": t.get("description", ""),
+            "parameters": t.get("input_schema") or {"type": "object", "properties": {}},
+        })
+    return [{"functionDeclarations": decls}]
+
+
+def _describe_tool_gemini(name: str, args: dict) -> str:
+    if name == "fetch_url":
+        return f"Fetching {(args.get('url') or '')[:120]}"
+    if name == "web_search":
+        return f"Searching: {(args.get('query') or '')[:120]}"
+    if name == "deep_research":
+        return f"Deep research ({args.get('mode','standard')}): {(args.get('query') or '')[:100]}"
+    return f"Running {name}"
+
+
+async def _call_vertex_gemini(model_cfg: dict, prompt: str,
+                              entry: dict | None = None,
+                              timeout_s: float = 120.0) -> str:
+    """Call Vertex Gemini generateContent with tool-use loop. Mirrors
+    _call_vertex_claude but in Gemini's request/response shape."""
+    # Build contents from full turn history for multi-turn context.
+    contents: list = []
+    if entry and entry.get("turns"):
+        for t in entry["turns"][:-1]:
+            if t.get("prompt") is not None:
+                contents.append({"role": "user", "parts": [{"text": t["prompt"]}]})
+            if t.get("response") is not None:
+                contents.append({"role": "model", "parts": [{"text": t["response"]}]})
+        contents.append({"role": "user", "parts": [{"text": entry["turns"][-1].get("prompt") or prompt}]})
+    else:
+        contents.append({"role": "user", "parts": [{"text": prompt}]})
+
+    body_base = {
+        "generationConfig": {"maxOutputTokens": 8192, "temperature": 0.7},
+        "tools": _gemini_tool_declarations(),
+    }
+    tool_calls_made = 0
+    try:
+        for turn in range(MAX_TOOL_TURNS):
+            body = {**body_base, "contents": contents}
+            try:
+                d = await _vertex_post(model_cfg, body, timeout_s=timeout_s,
+                                       method="generateContent")
+            except Exception as e:
+                return f"[proxy: Vertex Gemini call failed: {e}]"
+            cands = d.get("candidates", [])
+            if not cands:
+                return "[proxy: empty Gemini candidates]"
+            model_content = cands[0].get("content", {}) or {}
+            parts = model_content.get("parts", []) or []
+            # Collect function calls in this turn
+            fn_calls = [(p["functionCall"]) for p in parts if p.get("functionCall")]
+            if not fn_calls:
+                # Final text — concat all text parts
+                text = "".join(p.get("text", "") for p in parts if "text" in p).strip()
+                return text or "[proxy: empty Gemini response]"
+            # Feed back the model's assistant turn with the function-call parts,
+            # then send a user turn containing functionResponse parts.
+            contents.append({"role": "model", "parts": parts})
+            fn_response_parts = []
+            for fc in fn_calls:
+                name = fc.get("name", "")
+                args = fc.get("args") or {}
+                if tool_calls_made >= MAX_TOOL_CALLS_PER_CASCADE:
+                    fn_response_parts.append({"functionResponse": {
+                        "name": name,
+                        "response": {"content": "[tool cap reached — refusing more tool calls]"},
+                    }})
+                    continue
+                tool_calls_made += 1
+                if entry is not None:
+                    entry["tool_status"] = _describe_tool_gemini(name, args)
+                    entry["tool_history"] = entry.get("tool_history", []) + [entry["tool_status"]]
+                    logger.info(f"[GEMINI] tool_use {name} args={json.dumps(args)[:200]}")
+                try:
+                    out = await _execute_tool(name, args)
+                except Exception as ex:
+                    out = f"[tool exception: {ex}]"
+                fn_response_parts.append({"functionResponse": {
+                    "name": name, "response": {"content": out},
+                }})
+            if entry is not None:
+                entry["tool_status"] = None
+            contents.append({"role": "user", "parts": fn_response_parts})
+        return "[proxy: Gemini tool loop exhausted after 8 turns]"
+    finally:
+        if entry is not None:
+            entry["tool_status"] = None
+
+
+async def _call_vertex(model_cfg: dict, prompt: str, vendor: str,
+                       entry: dict | None = None,
+                       timeout_s: float = 120.0) -> str:
+    """Vendor-neutral dispatcher used by the cascade shim."""
+    if vendor == "gemini":
+        return await _call_vertex_gemini(model_cfg, prompt, entry=entry, timeout_s=timeout_s)
+    return await _call_vertex_claude(model_cfg, prompt, entry=entry, timeout_s=timeout_s)
 
 
 async def _call_vertex_claude(model_cfg: dict, prompt: str,
@@ -1265,13 +1403,14 @@ async def proxy(request: Request, path: str):
                 cid_in_body = _m.group(0)
         except Exception:
             pass
-    if (user_model not in CLAUDE_MODELS
+    if (user_model not in SHIM_MODELS
         and cid_in_body and cid_in_body in CLAUDE_CASCADES
-        and CLAUDE_CASCADES[cid_in_body].get("model_label") in CLAUDE_MODELS):
+        and CLAUDE_CASCADES[cid_in_body].get("model_label") in SHIM_MODELS):
         user_model = CLAUDE_CASCADES[cid_in_body]["model_label"]
-        logger.info(f"[CLAUDE] sticky-route {cid_in_body} → {user_model} (header was {request.headers.get('x-user-model', '')!r})")
-    if user_model in CLAUDE_MODELS:
-        model_cfg = CLAUDE_MODELS[user_model]
+        logger.info(f"[SHIM] sticky-route {cid_in_body} → {user_model} (header was {request.headers.get('x-user-model', '')!r})")
+    if user_model in SHIM_MODELS:
+        vendor = _vendor_for(user_model)  # "gemini" | "claude"
+        model_cfg = _model_config_for(user_model)
 
         # StartCascade: return a synthetic cascadeId (the SPA passes its own,
         # we just echo it back and register).
@@ -1338,7 +1477,8 @@ async def proxy(request: Request, path: str):
             entry["turn"] = len(entry["turns"])
             entry["tool_history"] = []        # per-turn tool history
             entry["tool_status"] = None
-            logger.info(f"[CLAUDE] SendUserCascadeMessage {cid} turn={entry['turn']} model={user_model} prompt={prompt[:80]!r}")
+            entry["vendor"] = vendor
+            logger.info(f"[SHIM] SendUserCascadeMessage {cid} turn={entry['turn']} vendor={vendor} model={user_model} prompt={prompt[:80]!r}")
 
             # Slash-command handler for MCP lifecycle. Runs BEFORE Vertex is
             # called so Claude tokens aren't spent on control commands.
@@ -1368,13 +1508,13 @@ async def proxy(request: Request, path: str):
                 # tool loop can publish "🔎 Searching…" / "📄 Fetching…" progress
                 # that _synthesize_claude_state_frame surfaces to the UI. Passes
                 # entry["turns"] so Vertex sees the full conversation history.
-                async def _run(cid=cid, entry=entry):
+                async def _run(cid=cid, entry=entry, vendor=vendor, model_cfg=model_cfg):
                     try:
-                        resp_text = await _call_vertex_claude(model_cfg, prompt, entry=entry)
+                        resp_text = await _call_vertex(model_cfg, prompt, vendor=vendor, entry=entry)
                         if entry["turns"] and entry["turns"][-1]["response"] is None:
                             entry["turns"][-1]["response"] = resp_text
                         entry["response"] = resp_text
-                        logger.info(f"[CLAUDE] {cid} turn={entry['turn']} got response ({len(resp_text)}B, tools={len(entry.get('tool_history') or [])})")
+                        logger.info(f"[SHIM] {cid} vendor={vendor} turn={entry['turn']} got response ({len(resp_text)}B, tools={len(entry.get('tool_history') or [])})")
                     except Exception as ex:
                         err = f"[proxy error: {ex}]"
                         if entry["turns"] and entry["turns"][-1]["response"] is None:
@@ -1405,7 +1545,7 @@ async def proxy(request: Request, path: str):
             cid = sub_doc.get("conversationId")
         except Exception:
             cid = None
-        if cid and (cid in CLAUDE_CASCADES or user_model in CLAUDE_MODELS):
+        if cid and (cid in CLAUDE_CASCADES or user_model in SHIM_MODELS):
             data_frame = b"\x00\x00\x00\x00\x02{}"
             trailer = b"grpc-status: 0\r\n"
             trailer_frame = b"\x80" + len(trailer).to_bytes(4, "big") + trailer
@@ -1428,14 +1568,17 @@ async def proxy(request: Request, path: str):
             cid = sub_doc.get("conversationId") or sub_doc.get("cascadeId")
         except Exception:
             cid = None
-        want_claude = user_model in CLAUDE_MODELS
-        if cid and (cid in CLAUDE_CASCADES or want_claude):
+        want_shim = user_model in SHIM_MODELS
+        if cid and (cid in CLAUDE_CASCADES or want_shim):
             if cid not in CLAUDE_CASCADES:
                 CLAUDE_CASCADES[cid] = {
-                    "model": user_model, "trajectory_id": cid,
-                    "execution_id": cid, "prompt": None, "response": None, "turn": 0,
+                    "model": user_model, "model_label": user_model,
+                    "vendor": _vendor_for(user_model) or "claude",
+                    "trajectory_id": cid, "execution_id": cid,
+                    "prompt": None, "response": None, "turn": 0,
+                    "turns": [],
                 }
-            logger.info(f"[CLAUDE] StreamAgentStateUpdates for {cid} → synthetic frames (model={user_model or 'unknown'})")
+            logger.info(f"[SHIM] StreamAgentStateUpdates for {cid} → synthetic frames (model={user_model or 'unknown'})")
             import asyncio as _a
             entry = CLAUDE_CASCADES[cid]
             async def claude_stream():
@@ -1917,7 +2060,8 @@ async def proxy(request: Request, path: str):
   window.__selectedModelLabel = localStorage.getItem('__selectedModelLabel') || 'Gemini 3.5 Flash';
   console.log('[model-picker] initial =', window.__selectedModelLabel);
 
-  const KNOWN_LABELS = ['Gemini 3.5 Flash', 'Claude Opus 4.8', 'Claude Fable 5'];
+  const KNOWN_LABELS = ['Gemini 3.5 Flash', 'Gemini 3.1 Flash Lite Preview',
+                         'Gemini 3.1 Pro', 'Claude Opus 4.8', 'Claude Fable 5'];
 
   function _findModelChip() {
     // The chip is a leaf button whose visible text is exactly a known label
