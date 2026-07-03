@@ -61,9 +61,16 @@ fi
 
 # ---- 5. Install source into the Antigravity SDK bin dir -----------------
 BIN_DIR="$RUN_HOME/.gemini/antigravity/bin"
-install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/proxy.py             "$BIN_DIR/proxy.py"
+rm -f "$BIN_DIR/proxy.py"
+install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/ccpa_mock.py         "$BIN_DIR/ccpa_mock.py"
+install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/ensure_wal.py        "$BIN_DIR/ensure_wal.py"
 install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/mcp_deep_research.py "$BIN_DIR/mcp_deep_research.py"
 install -o "$RUN_USER" -g "$RUN_USER" -m 0755 config/start_hub.sh      "$BIN_DIR/start_hub.sh"
+
+# ---- 5a. Configure automatic WAL database optimization cron job ----------
+echo "Configuring automatic SQLite WAL database optimizer cron job..."
+(sudo -u "$RUN_USER" crontab -l 2>/dev/null | grep -v "ensure_wal.py" || true; echo "* * * * * $BIN_DIR/ensure_wal.py > /dev/null 2>&1") | sudo -u "$RUN_USER" crontab -
+
 
 # ---- 6. nginx site -------------------------------------------------------
 if command -v nginx >/dev/null 2>&1; then
