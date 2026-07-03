@@ -1,114 +1,129 @@
 # Troubleshooting
 
-Known failure modes and their fixes. All fixes assume you can
-`journalctl -u antigravity-web.service -f` and edit files under
-`~/.gemini/antigravity/bin/`.
+Known failure modes and their resolutions in the native proxy-less CCPA-mock architecture.
 
-## Browser shows "Working…" forever, no reply
+## 1. Browser shows "Working…" spinner forever with no model response
 
-**Cause:** proxy.py's shim didn't call Vertex, or Vertex 4xx'd, or the
-StreamAgentStateUpdates stream isn't emitting a frame with the response.
+### Cause
+This occurs if the Go `language_server` (port `8081`) or the `ccpa_mock.py` sidecar (port `8083`) did not receive, process, or successfully stream the model generation from Vertex AI.
 
-**Diagnose:** find your cascade id in the URL bar or DevTools Network tab,
-then
+### Diagnostic Steps
+1. **Check Service Logs**: Check the unified systemd unit status and its logs:
+   ```bash
+   sudo systemctl status antigravity-web.service --no-pager
+   journalctl -u antigravity-web.service -f --since "5 min ago"
+   ```
+2. **Inspect Mock Logs**: Check if the mock sidecar is experiencing errors forwarding to Vertex AI:
+   ```bash
+   tail -n 100 /tmp/ccpa_mock.log
+   ```
+3. **Verify Vertex AI Connection**: Test if the sidecar can retrieve a Google Cloud Access Token and reach Vertex AI using Google Application Default Credentials (ADC):
+   ```bash
+   gcloud auth application-default print-access-token
+   ```
+   If credentials are missing or expired, re-run:
+   ```bash
+   gcloud auth application-default login
+   ```
 
+---
+
+## 2. Startup Aborts / "Address already in use" (Ports 8081 / 8083)
+
+### Cause
+A previous instance of the Go `language_server` or the Python `ccpa_mock.py` process did not shut down cleanly and is still bound to port `8081` or `8083`.
+
+### Diagnostic Steps
+1. Find what process is holding the ports:
+   ```bash
+   sudo lsof -i :8081 -i :8083
+   ```
+2. Kill the stale processes:
+   ```bash
+   sudo pkill -9 -f language_server || true
+   sudo pkill -9 -f ccpa_mock.py || true
+   ```
+3. Restart the service:
+   ```bash
+   sudo systemctl restart antigravity-web.service
+   ```
+
+---
+
+## 3. Chrome Launcher Timeouts / SingletonLock Blocks
+
+### Cause
+The Go `language_server` spawns an internal Chromium process for web-rendering tasks or browser-based tools. If Chromium crashes or gets interrupted, a stale `SingletonLock` file is left in the user-profile directory, causing future starts of Chrome to hang forever.
+
+### Diagnostic Steps
+1. **Kill Zombie Chrome Processes**:
+   ```bash
+   sudo pkill -9 -f chrome || true
+   ```
+2. **Remove Stale Locks**:
+   ```bash
+   # Clean language_server profile
+   rm -rf /tmp/ls-chrome-data/*
+   
+   # Clean general user profile
+   rm -f ~/.config/chrome-data/Singleton*
+   rm -f ~/.config/chrome-data/DevToolsActivePort.lock
+   ```
+3. **Restart the Web Hub Service**:
+   ```bash
+   sudo systemctl restart antigravity-web.service
+   ```
+
+---
+
+## 4. Local loopback / connection errors on GCE VMs
+
+### Cause
+By default, Go's pure-Go DNS resolver can sometimes experience address resolution delays or failures for `127.0.0.1` or `localhost` within Google Compute Engine (GCE) VM network environments.
+
+### Fix
+Our `start_hub.sh` launcher handles this by forcing Go to use the standard C library (cgo) DNS resolver:
 ```bash
-journalctl -u antigravity-web.service --since '5 min ago' | grep <cid>
+export GODEBUG=netdns=cgo
 ```
+Ensure this environment variable is present in the active startup environment if running manually outside of systemd.
 
-Look for `[CLAUDE] {cid} turn=N got response (…B)`. If missing, Vertex
-never returned. If present, the polling stream isn't seeing the change —
-usually a frame-shape regression; check the console for `[consumeAgentStateStream]
-… error` (Connect will name the exact field that didn't decode).
+---
 
-## Console spams `cannot decode message google.protobuf.Timestamp from JSON: object`
+## 5. Model Dropdown is empty or missing custom Gemini options
 
-**Cause:** you added a Timestamp field to a synthetic frame using the
-`{seconds: N}` object form. Connect's protojson requires an RFC3339 STRING.
+### Cause
+Nginx is failing to route `/exa.language_server_pb.LanguageServerService/GetUserStatus` requests to the mock sidecar on port `8083`, or `ccpa_mock.py` crashed.
 
-**Fix:** `"2026-07-02T13:27:12Z"`.
+### Fix
+1. Confirm `ccpa_mock.py` is running:
+   ```bash
+   ps aux | grep ccpa_mock.py
+   ```
+2. Verify Nginx can proxy to port `8083`:
+   ```bash
+   curl -I http://127.0.0.1:8083/
+   ```
+3. Restart Nginx and the web service to apply clean mappings:
+   ```bash
+   sudo systemctl restart nginx
+   sudo systemctl restart antigravity-web.service
+   ```
 
-## After restart, Claude cascades don't appear in sidebar
+---
 
-**Cause:** persistence files exist but the `JetboxSubscribeToSummaries` hook
-isn't emitting them.
+## 6. MCP Server Starts fail or report "failed to open port"
 
-**Diagnose:** confirm files exist under
-`/mnt/data/antigravity/claude_cascades/*.json`, then curl the endpoint
-directly:
+### Cause
+Native MCP processes spawned by the Go `language_server` (e.g. from `~/.gemini/antigravity/mcp.json`) failed due to missing system package dependencies, incorrect execution paths, or stale subprocesses.
 
-```bash
-timeout 2 curl -s -N -X POST \
-  http://127.0.0.1:8080/exa.language_server_pb.LanguageServerService/JetboxSubscribeToSummaries \
-  -H 'Content-Type: application/grpc-web+json' \
-  -H "x-codeium-csrf-token: $CSRF_TOKEN" \
-  --data-binary $'\x00\x00\x00\x00\x02{}'
-```
-
-Should return an enveloped JSON payload with your cascade cids in `updates`.
-
-## Model dropdown reverts to Gemini after page reload
-
-**Cause:** the SPA's chip-label render fires before our injected JS's
-5-second user-click lock, and the observer helper clobbers the persisted
-preference back to Gemini.
-
-**Fix in proxy.py:** confirm `_setModel` has the
-`(Date.now() - __userClickAt) < 5000` guard, and that
-`_forceChipLabel(window.__selectedModelLabel)` runs at 200/500/1000/2000/4000ms
-after DOMContentLoaded.
-
-## `/mcp start` reports "failed to open port in 8s"
-
-**Cause:** MCP subprocess crashed on startup, most likely missing
-`fastmcp` in `pip --user`'s path for the systemd user.
-
-**Fix:**
-
-```bash
-sudo -u <RUN_USER> pip install --user --break-system-packages fastmcp
-```
-
-## "MCP already running" but `/mcp status` reports stopped
-
-**Cause:** stale `MCP_STATE["proc"]` reference after a proxy restart (in-
-memory state is lost, but the child subprocess might still be alive).
-
-**Fix:**
-
-```bash
-pkill -f mcp_deep_research
-```
-
-Then re-run `/mcp start`.
-
-## GCP LB returns `ERR_HTTP2_PROTOCOL_ERROR`
-
-**Cause:** nginx isn't using chunked framing for streams — LB converts
-close-delimited h1 to h2 RST_STREAM at end-of-stream. Or backendService
-`timeoutSec` is at the default 30s, killing long streams.
-
-**Fix:**
-
-1. In `nginx.conf`, ensure the streams `location` has
-   `chunked_transfer_encoding on` and `proxy_buffering off`.
-2. `gcloud compute backend-services update <name> --global --timeout=86400`
-
-## "trajectory not found in any store" ConnectError in console
-
-**Cause:** the SPA opened `StreamAgentStateUpdates(cid)` BEFORE
-`StartCascade` registered the cascade with agy. On Claude cascades,
-proxy.py's shim absorbs this by serving synthetic frames.
-
-**Fix:** confirm your Claude cascade path in proxy.py registers the cid on
-StreamAgentStateUpdates if `x-user-model in CLAUDE_MODELS`, so we don't
-fall through to agy on the very first stream.
-
-## GetTurnDiff spams "trajectory not found" for Claude cascades
-
-**Cause:** agy doesn't know about Claude cascades, so it can't return diffs
-for their turns.
-
-**Fix:** the shim short-circuits `GetTurnDiff` for Claude cids with an empty
-`{}`. If it's still firing, the request lacks `x-user-model` — confirm
-`RPC_NEEDS_LABEL` in the injected JS includes `"GetTurnDiff"`.
+### Diagnostic Steps
+1. **Check MCP Logs**: Look in `~/.gemini/antigravity/logs/` or check `language_server` stdout/stderr for any traceback from the MCP server.
+2. **Clean Stale Subprocesses**:
+   ```bash
+   pkill -f mcp_deep_research || true
+   ```
+3. **Verify Dependencies**: If utilizing custom python-based MCP servers (such as Deep Research), verify that all packages are installed correctly:
+   ```bash
+   pip install --user --break-system-packages fastmcp
+   ```

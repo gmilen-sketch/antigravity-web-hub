@@ -1,122 +1,61 @@
-# Request flow — one Claude turn, byte-level
+# Request flow — one Gemini turn, byte-level
 
-Walkthrough of a single user message picking Claude Opus 4.8, invoking the
-`fetch_url` tool once, and rendering back into the SPA.
+Walkthrough of a single user message picking Gemini 3.5 Flash, invoking model inference via Vertex AI, and streaming responses back natively.
 
 ## 1. Page load (once per browser tab)
 
 - Browser hits `https://<hostname>/`.
-- GCP LB → jumpstation `:443` → nginx `:8080` → `location /` → proxy.py `:8082`.
-- proxy.py fetches `/` from language_server `:8081`, decompresses gzip,
-  finds `</head>`, injects our `<script>` block right before it. This block:
-  1. Reads `localStorage.__selectedModelLabel` (fallback `"Gemini 3.5 Flash"`).
-  2. Registers a `document.addEventListener('click', …, true)` capture-phase
-     handler that catches clicks on popover option buttons whose text matches
-     a known model label.
-  3. Wraps `window.fetch` to add `x-user-model: <label>` on cascade RPCs.
-  4. Installs a `MutationObserver` that force-repaints the model chip label
-     whenever the SPA tries to revert it (locks for 5 s after user click).
+- GCP LB → jumpstation `:443` → nginx `:8080` → `location /` → Go `language_server` `:8081`.
+- Nginx intercepts the HTML response and uses its `sub_filter` feature to inject our onboarding bypass `<script>` block directly into the `<head>` of the page on the fly:
+  ```html
+  <script>
+    window.nativeStorage = {
+      _d: { "antigravityOnboarding": "true", "antigravityUnifiedStateSync.onboarding": "true", "antigravity.isLoggedIn": "true" },
+      getItems: async function(k) { ... },
+      updateItems: async function(i) { ... },
+      onChanged: function(c) { ... }
+    };
+  </script>
+  ```
+- This completely prevents the local client-side onboarding blocks without touching the underlying React assets.
 
-## 2. StartCascade (browser → proxy)
+## 2. GetUserStatus (browser → sidecar)
 
-- SPA generates a new conversation UUID, POSTs to
-  `/exa.language_server_pb.LanguageServerService/StartCascade`
-  (unary Connect, `application/grpc-web+json`).
-- Our fetch wrapper attaches `x-user-model: Claude Opus 4.8`.
-- nginx routes `/exa.*` unary paths through to proxy.py `:8082`
-  (streaming paths go direct to language_server; StartCascade is unary).
-- proxy.py sees `user_model in CLAUDE_MODELS` → Claude shim path:
-  - Registers `CLAUDE_CASCADES[cid] = { model_label, trajectory_id,
-    execution_id, created_at, turns: [] }`.
-  - Persists a JSON snapshot to
-    `/mnt/data/antigravity/claude_cascades/{cid}.json`.
-  - Returns `{"cascadeId": cid}` as a grpc-web+json unary response with a
-    `grpc-status: 0` trailer frame.
+- When the SPA loads, it requests `/exa.language_server_pb.LanguageServerService/GetUserStatus` (unary, `application/grpc-web+json`).
+- Nginx intercepts this exact path and proxies it to `ccpa_mock.py` on port `8083`.
+- `ccpa_mock.py`:
+  1. Passes the request to the Go `language_server` on port `8081` to fetch the real, live status response.
+  2. Augments the response payload to include our custom model dropdown entries: **Gemini 3.5 Flash**, **Gemini 3.1 Flash Lite Preview**, and **Gemini 3.1 Pro** with their respective wire enums.
+  3. Returns the augmented gRPC-Web payload back to the browser.
+- The SPA reads `clientModelConfigs` and renders our custom options in the picker seamlessly.
 
-## 3. StreamAgentStateUpdates opens (browser → proxy, long-lived)
+## 3. StartCascade (browser → sidecar)
 
-- SPA opens the state stream for `cid`. Stream RPCs are in nginx's streaming
-  allowlist, but our Claude shim also intercepts this at proxy.py so it can
-  serve synthetic frames — nginx doesn't include this specific RPC in its
-  passthrough regex, so it goes through proxy.py.
-- proxy.py's `StreamingResponse` yields an initial synthetic `CascadeAgentState`
-  frame (empty turns), then polls `entry` every 500 ms, emitting a new frame
-  whenever `(turn, response, tool_status, len(tool_history))` changes.
-- Frame shape verified against the SPA's `Sba` merger:
-  `stepsUpdate.{indices, steps, totalLength, pageBounds}` +
-  `mainTrajectoryUpdate.parentReferences: []`.
+- When a new chat conversation starts, the SPA POSTs to `/exa.language_server_pb.LanguageServerService/StartCascade`.
+- Nginx intercepts this path and proxies it to `ccpa_mock.py` on port `8083`.
+- `ccpa_mock.py` parses the requested model from the payload, overrides the request with a valid root-level `requestedModel` enum that the Go backend's protobuf parser expects, and passes the modified request to `language_server` on port `8081`.
+- `language_server` initializes the cascade and returns `{"cascadeId": cid}` with a standard gRPC-Web response.
 
-## 4. SendUserCascadeMessage
+## 4. SendUserCascadeMessage & StreamAgentStateUpdates (browser → Go direct)
 
-User types *"Fetch https://example.com and tell me the h1 text"* and presses Enter.
+- The user submits a prompt. The browser POSTs `SendUserCascadeMessage` and opens the long-lived `StreamAgentStateUpdates(cid)` stream.
+- Since these are streaming endpoints and do not require sidecar intervention, Nginx maps them to the default catch-all paths and routes them **natively and directly** to `language_server` on port `8081` via `grpc_pass` and `proxy_pass`.
+- This ensures absolute minimum latency, avoids any intermediate buffer delays, and utilizes Google's highly optimized Go server.
 
-- SPA POSTs `SendUserCascadeMessage` with `{ cascadeId, items: [{text: …}] }`.
-- Wrapper attaches `x-user-model: Claude Opus 4.8`.
-- proxy.py:
-  1. Appends `{prompt, response: null}` to `entry["turns"]`.
-  2. Persists the entry (turn 1 snapshot on disk).
-  3. Fires the Vertex call as an `asyncio.create_task` (returns 200 immediately).
-  4. Response back to SPA: enveloped empty JSON body + `grpc-status: 0` trailer.
+## 5. Model Inference interception (Go → sidecar → Vertex AI)
 
-## 5. Vertex Anthropic call (proxy → Vertex)
+- The Go `language_server` (running with `--model_api_client_type=ccpa` and pointing `--cloud_code_endpoint` to `http://127.0.0.1:8083`) processes the message, wraps the request parameters into a Cloud Code model call, and makes a POST call to `http://127.0.0.1:8083/v1internal:streamGenerateContent?alt=sse`.
+- Our sidecar `ccpa_mock.py` on port `8083` intercepts this stream request:
+  1. Parses the payload and maps the requested model enum to the official Vertex AI model name (e.g., `gemini-3.5-flash` or `gemini-3.1-pro-preview`).
+  2. Cleans the payload to retain only Vertex-compatible keys (e.g., `contents`, `systemInstruction`, `generationConfig`, `tools`, `toolConfig`), removing incompatible fields like `thinkingConfig` to prevent API errors.
+  3. Obtains a fresh Google Application Default Credentials (ADC) Bearer token.
+  4. Makes an asynchronous chunk-by-chunk HTTP stream request to the official Vertex AI global endpoint:
+     ```
+     https://aiplatform.googleapis.com/v1beta1/projects/{GCP_PROJECT}/locations/global/publishers/google/models/{model}:streamGenerateContent?alt=sse
+     ```
+  5. As chunked SSE tokens are returned by Vertex AI, `ccpa_mock.py` streams them directly back to `language_server` on port `8081`.
 
-- `_call_vertex_claude(entry)` builds the full `messages` list from
-  `entry["turns"]` (all prior user/assistant turns + current user prompt).
-- POST to
-  `https://aiplatform.googleapis.com/v1/projects/$PROJECT/locations/global/publishers/anthropic/models/claude-opus-4-8:rawPredict`
-  with:
-  - `Authorization: Bearer <ADC token>` (from `google-auth`)
-  - `x-goog-user-project: $PROJECT`
-  - Body: `{messages, max_tokens: 8192, tools: CLAUDE_TOOLS, anthropic_version: "vertex-2023-10-16"}`
-  - `CLAUDE_TOOLS` includes `fetch_url`, `web_search`, and — if MCP is
-    running — `deep_research`.
+## 6. Response render
 
-- Response contains `content: [{type: "tool_use", name: "fetch_url", id, input: {url: "https://example.com"}}]`.
-
-## 6. Tool execution loop
-
-- proxy.py appends the assistant `tool_use` block to `messages`.
-- Sets `entry["tool_status"] = "Fetching https://example.com"` → polling
-  stream picks this up and emits an in-progress `PLANNER_RESPONSE` step
-  showing `⏳ Fetching https://example.com`.
-- `_fetch_url(url)`:
-  - SSRF guard: resolves `example.com`, rejects if any resolved IP is in
-    `10/8`, `172.16/12`, `192.168/16`, `169.254/16` (blocks GCP metadata),
-    `127/8`, or `::1`.
-  - `httpx.AsyncClient` GET with browser UA.
-  - Strips HTML → plain text via `html.parser` (drops `<script>/<style>`,
-    keeps `<a href>` as `text (url)`).
-  - Truncates to 40k chars.
-- Appends `{type: "tool_result", tool_use_id, content: fetched_text}` to
-  `messages` as a user role.
-- Loop iteration 2: POST to Vertex again with the augmented messages.
-- Response is text only (no more tool_use). Extract text via `_extract_text`.
-
-## 7. Response back to the SPA
-
-- `entry["turns"][-1]["response"] = text`.
-- `entry["tool_status"] = None`.
-- Persists to disk.
-- Polling stream (step 3) sees `response` change → emits a new frame with a
-  DONE `PLANNER_RESPONSE` step containing the answer.
-- SPA's `Uba` merger picks up `mainTrajectoryUpdate.stepsUpdate`, replaces
-  the in-progress step with the DONE step; React re-renders the message.
-
-## 8. Persistence check
-
-- Restart `antigravity-web.service`.
-- `_load_cascades_from_disk()` reads every `*.json` under
-  `/mnt/data/antigravity/claude_cascades/`, restores `CLAUDE_CASCADES`,
-  re-attaches `model_config` from the label.
-- `JetboxSubscribeToSummaries` hook emits synthetic summaries for every
-  restored cascade → SPA sidebar shows them.
-- User picks one → new `SendUserCascadeMessage` on the existing cid →
-  proxy sticky-routes to Claude (because the cid is already in
-  `CLAUDE_CASCADES`), even if the model chip has reset to Gemini.
-
-## What doesn't happen
-
-- No proto encoding/decoding of the Claude payload — Anthropic's Vertex API
-  is HTTP+JSON, so proxy.py only touches JSON.
-- No dependency on any Google-internal binary or endpoint (see
-  ARCHITECTURE.md § *Antigravity binaries in use*).
+- `language_server` receives the streamed tokens from the sidecar, performs its internal orchestrations (including triggering any configured Workspace or local MCP tools natively), and streams the final results back to the browser via the open `StreamAgentStateUpdates` gRPC-Web connection.
+- The browser renders the response in the React UI in real-time.

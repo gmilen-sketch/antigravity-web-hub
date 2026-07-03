@@ -1,39 +1,22 @@
 # Antigravity Web Hub
 
-Run [Google Antigravity's](https://antigravity.google/) web hub on a headless
-GCP VM, with two extensions the desktop app doesn't ship:
+Run [Google Antigravity's](https://antigravity.google/) web hub on a headless GCP VM with optimized direct-to-Go routing and native extensions:
 
-- **All models routed through Vertex.** The shim now serves both Gemini
-  (`3.5 Flash`, `3.1 Flash Lite Preview`, `3.1 Pro`) and Anthropic (`Claude
-  Opus 4.8`, `Claude Fable 5`) via Vertex `generateContent` / `rawPredict`.
-  Gemini is the primary path — agy's own Gemini support is broken in
-  external builds (`GetChatMessage is unimplemented`), so we bypass it
-  entirely. Multi-turn history, web browsing tools (search + URL fetch,
-  SSRF-guarded), and disk persistence across restarts apply to both
-  vendors. See [docs/claude-shim.md](docs/claude-shim.md) for how the
-  shim works (same pattern for Gemini and Claude — dispatch is by
-  `vendor`).
-- **On-demand FastMCP `deep_research` tool.** Type `/mcp start` in chat to
-  spawn a Python FastMCP server (Streamable HTTP + SSE) that runs a
-  Claude-Opus-powered research loop with `standard` and `max` modes. When
-  running, the tool becomes callable by the Claude cascade in the hub.
-- **Integrated Google Workspace MCP Server.** Provides native actions for Gmail, Google Calendar, Google Drive, and Google Sheets under standard OAuth, allowing the language server to write spreadsheets, schedule events, check mail, and index drive files asynchronously without client browser dependencies. Highly secure head-less profile isolation with tokens persisted in `tokens.json`.
+- **Optimized Native Performance.** The FastAPI proxy has been completely removed. High-performance streaming RPCs and assets go directly from Nginx to Google's native Go `language_server` with zero intermediate proxy hops or latency.
+- **Model Ingress via Vertex AI sidecar.** A lightweight Python sidecar (`ccpa_mock.py` on port `8083`) intercepting specific unary paths to perform model list augmentation and routing to Vertex AI via Google Application Default Credentials (ADC).
+- **Integrated Google Workspace MCP Server.** Natively runs a Google Workspace MCP server under standard OAuth, allowing the language server to write spreadsheets, schedule events, check mail, and index drive files asynchronously without client browser dependencies. Highly secure head-less profile isolation with tokens persisted in `tokens.json`.
+- **On-demand FastMCP `deep_research` tool.** Exposes a Python FastMCP server (Streamable HTTP + SSE) natively configured inside `mcp.json` that performs intensive research loops using Google Gemini.
 
-The point isn't to fork Antigravity — it's to make it a first-class
-multi-model tool on a shared server, without hosting your own agent.
+The point isn't to fork Antigravity — it's to make it a first-class tool on a shared server, utilizing native capabilities and official APIs.
 
 ## Architecture
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the full diagram and component
-walkthrough. TL;DR:
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full diagram and component walkthrough. TL;DR:
 
 ```
-Browser → GCP HTTPS LB (IAP) → nginx → proxy.py (FastAPI)
-                                          ├── auth mocks
-                                          ├── model dropdown injection
-                                          ├── Claude shim → Vertex Anthropic
-                                          ├── /mcp start|stop|status
-                                          └── passthrough → language_server (agy)
+Browser → GCP HTTPS LB (IAP) → nginx :8080
+                                 ├── GetUserStatus & StartCascade → ccpa_mock.py :8083
+                                 └── Everything else → language_server :8081
 ```
 
 ## Prerequisites
@@ -41,13 +24,9 @@ Browser → GCP HTTPS LB (IAP) → nginx → proxy.py (FastAPI)
 - A Debian/Ubuntu VM in GCP with:
   - Application Default Credentials configured
     (`gcloud auth application-default login` — see [SETUP.md](SETUP.md))
-  - A publicly-reachable hostname / IP (the setup script wires up a Classic
-    HTTPS Load Balancer + IAP)
-  - A second data disk **strongly recommended** — boot disk fills up fast
-    with Claude conversation JSON. The install script formats and mounts it
-    at `/mnt/data` if present.
-- Antigravity CLI installed (`~/.gemini/antigravity/bin/language_server`,
-  `agy`). The install script fetches the public installer.
+  - A publicly-reachable hostname / IP (the setup script wires up a Classic HTTPS Load Balancer + IAP)
+  - A second data disk **strongly recommended** — boot disk fills up fast. The install script formats and mounts it at `/mnt/data` if present.
+- Antigravity CLI installed (`~/.gemini/antigravity/bin/language_server`, `agy`). The install script fetches the public installer.
 
 ## Quick start
 
@@ -59,8 +38,7 @@ cp .env.example .env && $EDITOR .env
 scripts/bootstrap_all.sh
 ```
 
-Or do it in two stages — provision GCP on your workstation, then log into
-the VM and install:
+Or do it in two stages — provision GCP on your workstation, then log into the VM and install:
 
 ```bash
 # 1. Clone
@@ -79,52 +57,30 @@ That's it. The install script:
 
 1. Installs the Antigravity CLI (Google's public installer) if not present.
 2. `pip install --user`s the Python deps.
-3. `npm install`s the Node MCP stub.
-4. Formats and mounts `/dev/sdb` at `/mnt/data` if the disk exists
-   and is empty (asks first).
+3. `npm install`s the Google Workspace MCP dependencies.
+4. Formats and mounts `/dev/sdb` at `/mnt/data` if the disk exists and is empty (asks first).
 5. Drops `nginx.conf` and reloads nginx.
-6. Templates the systemd unit with your `$USER`, installs
-   `/etc/antigravity-web.env` from your `.env`, and starts the service.
+6. Templates the systemd unit with your `$USER`, installs `/etc/antigravity-web.env` from your `.env`, and starts the service.
 
-Visit `https://<your-hostname>/` — you should see the Antigravity SPA with a
-model dropdown containing **Gemini 3.5 Flash**, **Claude Opus 4.8**, and
-**Claude Fable 5**.
+Visit `https://<your-hostname>/` — you should see the Antigravity SPA with a model dropdown containing **Gemini 3.5 Flash**, **Gemini 3.1 Flash Lite Preview**, and **Gemini 3.1 Pro**.
 
 ## Using it
 
-- **Pick a model** from the dropdown (bottom-right of the input). Claude
-  models route through Vertex; Gemini routes through agy.
-- **Ask a URL question** — Claude has built-in `fetch_url` and `web_search`
-  tools. Try: *"Fetch https://example.com and tell me the h1."*
-- **Run a research task** — type `/mcp start` first, then ask Claude to
-  research something. It'll delegate via the `deep_research` MCP tool.
-- **Conversations persist.** Restart `antigravity-web.service` — your Claude
-  cascades come back from `/mnt/data/antigravity/claude_cascades/`. Gemini
-  cascades come back from agy's own SQLite store.
-
-## Slash commands
-
-| Command | Effect |
-|---|---|
-| `/mcp start` | Spawn the deep-research MCP subprocess and register the tool |
-| `/mcp stop` | Kill the MCP subprocess and un-register the tool |
-| `/mcp status` | PID / port / uptime |
+- **Pick a model** from the dropdown (bottom-right of the input). Gemini models route directly through the native Go server to Vertex AI.
+- **Run Google Workspace actions** — Ask Gemini to list drive files, send emails, or check calendar events.
+- **Conversations persist.** Restart `antigravity-web.service` — your Gemini cascades come back from agy's own SQLite store.
 
 ## Docs
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) — component diagram
-- [docs/claude-shim.md](docs/claude-shim.md) — **what the Vertex Claude shim is and how it works** (start here if you're wondering how Claude got into a Gemini-only UI)
+- [ARCHITECTURE.md](ARCHITECTURE.md) — component diagram and design details
 - [docs/request-flow.md](docs/request-flow.md) — end-to-end walkthrough of one turn
 - [docs/mcp.md](docs/mcp.md) — adding your own MCP tools
-- [docs/custom-domain.md](docs/custom-domain.md) — swap `<ip>.nip.io` for a real DNS domain (no SSL warnings)
+- [docs/custom-domain.md](docs/custom-domain.md) — swap `<ip>.nip.io` for a real DNS domain
 - [docs/troubleshooting.md](docs/troubleshooting.md) — known failure modes
 
 ## Contributions & scope
 
-The project is intentionally small — one proxy, one MCP, one systemd unit. If
-you want to add another model backend, follow the pattern in
-`src/proxy.py`'s `CLAUDE_MODELS` / `_call_vertex_claude` — copy, add a new
-label to `DROPDOWN_MODELS`, and route in the shim.
+The project is intentionally small and lightweight — a simple Nginx configuration, a sidecar Python process, and a systemd unit. If you want to add or modify model settings, follow the pattern in `src/ccpa_mock.py`'s `DROPDOWN_MODELS` and `map_model_name`.
 
 ## License
 
