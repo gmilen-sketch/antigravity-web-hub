@@ -17,6 +17,7 @@ GCP VM, with two extensions the desktop app doesn't ship:
   spawn a Python FastMCP server (Streamable HTTP + SSE) that runs a
   Claude-Opus-powered research loop with `standard` and `max` modes. When
   running, the tool becomes callable by the Claude cascade in the hub.
+- **Integrated Google Workspace MCP Server.** Provides native actions for Gmail, Google Calendar, Google Drive, and Google Sheets under standard OAuth, allowing the language server to write spreadsheets, schedule events, check mail, and index drive files asynchronously without client browser dependencies. Highly secure head-less profile isolation with tokens persisted in `tokens.json`.
 
 The point isn't to fork Antigravity — it's to make it a first-class
 multi-model tool on a shared server, without hosting your own agent.

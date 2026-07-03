@@ -10,6 +10,7 @@ package-lock.json
 *.token
 *.key
 *credentials*.json
+tokens.json
 oauth-token*
 ADC*
 

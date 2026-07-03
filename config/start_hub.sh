@@ -1,14 +1,23 @@
 #!/bin/bash
-# Script to launch the genuine Antigravity Web Hub under systemd natively
+# Prevent Chromium shared memory crashes on Linux GCE VMs
+export CHROMIUM_FLAGS="--no-sandbox --disable-dev-shm-usage --disable-gpu --headless=new"
 
-# Terminate any stray instances of language_server, proxy.py, or ccpa_mock.py running on our ports
-pkill -f "language_server" || true
-pkill -f "proxy.py" || true
-pkill -f "ccpa_mock.py" || true
+# Force Go to use cgo system resolver to prevent local loopback resolution failures on GCE VM network configurations
+export GODEBUG=netdns=cgo
+
+# Ensure isolated temp profile directory for language_server
+LS_CHROME_DIR="/tmp/ls-chrome-data"
+mkdir -p "$LS_CHROME_DIR"
+
+# Clean any stale Chrome locks from LS and user paths to prevent Go launcher timeout aborts
+rm -rf "$LS_CHROME_DIR"/*
+rm -f "$HOME"/.config/chrome-data/Singleton*
+rm -f "$HOME"/.config/chrome-data/DevToolsActivePort.lock
 
 export HOME="${HOME}"
 export ANTIGRAVITY_EXECUTABLE_DATA_DIR="$HOME/.gemini/antigravity"
 export GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT}"
+export ANTIGRAVITY_PROJECT_ID="${GOOGLE_CLOUD_PROJECT}"
 
 BIN_DIR="$HOME/.gemini/antigravity/bin"
 
@@ -28,10 +37,14 @@ echo "Starting language_server natively..."
     --model_api_client_type=ccpa \
     --cloud_code_endpoint="http://127.0.0.1:8083" \
     --google_cloud_project="${GOOGLE_CLOUD_PROJECT}" \
+    --override_oauth_client_id="${OAUTH_CLIENT_ID}" \
+    --override_oauth_client_secret="${OAUTH_CLIENT_SECRET}" \
     -csrf_token="${CSRF_TOKEN}" \
     --override_model_name="gemini-3.5-flash" \
-    --gemini_dir=".gemini" \
+    --local_chrome_headless=true \
+    --local_chrome_user_data_dir="$LS_CHROME_DIR" \
     --app_data_dir="antigravity" \
+    --gemini_dir=".gemini" \
     -standalone &
 
 LS_PID=$!
