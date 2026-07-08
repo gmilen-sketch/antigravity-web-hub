@@ -883,6 +883,30 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
         logging.info(f"--- RECEIVED GET ---")
         logging.info(f"Path: {self.path}")
         
+        if "/api/create-project-dir" in self.path:
+            import urllib.parse
+            parsed = urllib.parse.urlparse(self.path)
+            params = urllib.parse.parse_qs(parsed.query)
+            name = params.get("name", [""])[0]
+            if name and re.match(r"^[a-zA-Z0-9_-]+$", name):
+                dir_path = f"/mnt/data/projects/{name}"
+                logging.info(f"Creating project directory: {dir_path}")
+                os.makedirs(dir_path, exist_ok=True)
+                os.chmod(dir_path, 0o777)
+                try:
+                    import shutil
+                    import getpass
+                    username = os.environ.get("USER") or getpass.getuser()
+                    shutil.chown(dir_path, username, username)
+                except Exception as ex:
+                    logging.error(f"Failed to chown: {ex}")
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "success", "path": dir_path}).encode("utf-8"))
+                return
+
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
         self.end_headers()
