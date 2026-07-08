@@ -488,17 +488,44 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
             vertex_url = f"https://aiplatform.googleapis.com/v1beta1/projects/{PROJECT_ID}/locations/global/publishers/google/models/{model}:streamGenerateContent?alt=sse"
             logging.info(f"Forwarding streamGenerateContent to Vertex AI: {vertex_url}")
             
+            max_retries = 5
+            backoff_base = 1.0
+            attempt = 0
+            resp = None
+
+            while attempt < max_retries:
+                attempt += 1
+                try:
+                    req = urllib.request.Request(
+                        vertex_url,
+                        data=payload_bytes,
+                        headers={
+                            "Authorization": f"Bearer {token}",
+                            "Content-Type": "application/json",
+                        },
+                        method="POST",
+                    )
+                    resp = urllib.request.urlopen(req)
+                    break
+                except urllib.error.HTTPError as he:
+                    if he.code in (429, 500, 502, 503, 504) and attempt < max_retries:
+                        sleep_time = backoff_base * (2 ** (attempt - 1))
+                        logging.warning(f"Vertex AI stream request returned HTTP {he.code}. Retrying in {sleep_time:.2f}s (attempt {attempt}/{max_retries})...")
+                        time.sleep(sleep_time)
+                        token = get_adc_token()
+                    else:
+                        raise he
+                except Exception as ex:
+                    if attempt < max_retries:
+                        sleep_time = backoff_base * (2 ** (attempt - 1))
+                        logging.warning(f"Vertex AI stream request encountered exception: {ex}. Retrying in {sleep_time:.2f}s (attempt {attempt}/{max_retries})...")
+                        time.sleep(sleep_time)
+                        token = get_adc_token()
+                    else:
+                        raise ex
+
             try:
-                req = urllib.request.Request(
-                    vertex_url,
-                    data=payload_bytes,
-                    headers={
-                        "Authorization": f"Bearer {token}",
-                        "Content-Type": "application/json",
-                    },
-                    method="POST",
-                )
-                with urllib.request.urlopen(req) as resp:
+                with resp:
                     self.send_response(resp.status)
                     for k, v in resp.headers.items():
                         if k.lower() not in ("content-length", "transfer-encoding"):
