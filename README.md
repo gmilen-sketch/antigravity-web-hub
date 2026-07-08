@@ -1,23 +1,92 @@
 # Antigravity Web Hub
 
-Run [Google Antigravity's](https://antigravity.google/) web hub on a headless GCP VM with optimized direct-to-Go routing and native extensions:
+An enterprise-ready, headless GCP VM deployment and architecture for Google Antigravity Web, featuring native optimizations, multi-model routing, and robust API integrations.
 
-- **Optimized Native Performance.** The FastAPI proxy has been completely removed. High-performance streaming RPCs and assets go directly from Nginx to Google's native Go `language_server` with zero intermediate proxy hops or latency.
-- **Model Ingress via Vertex AI sidecar.** A lightweight Python sidecar (`ccpa_mock.py` on port `8083`) intercepting specific unary paths to perform model list augmentation and routing to Vertex AI via Google Application Default Credentials (ADC).
-- **Integrated Google Workspace MCP Server.** Natively runs a Google Workspace MCP server under standard OAuth, allowing the language server to write spreadsheets, schedule events, check mail, and index drive files asynchronously without client browser dependencies. Highly secure head-less profile isolation with tokens persisted in `tokens.json`.
-- **On-demand FastMCP `deep_research` tool.** Exposes a Python FastMCP server (Streamable HTTP + SSE) natively configured inside `mcp.json` that performs intensive research loops using Google Gemini.
+---
 
-The point isn't to fork Antigravity — it's to make it a first-class tool on a shared server, utilizing native capabilities and official APIs.
+## 📌 Project Overview (What This Project Is About)
 
-## Architecture
+**Antigravity Web Hub** is an optimized, security-hardened, and production-ready distribution of Google's [Antigravity (AGY)](https://antigravity.google/) web platform tailored for cloud environments. It transforms Antigravity from a desktop-centric CLI and local GUI tool into a persistent, multi-user web-accessible workspace. 
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the full diagram and component walkthrough. TL;DR:
+Running on a headless Google Cloud Platform (GCP) VM (`jumpstation`), the Web Hub serves Antigravity’s beautiful Single Page Application (SPA) to remote teams, protected by an Identity-Aware Proxy (IAP) and a GCP Classic HTTPS Load Balancer with Google-managed SSL.
+
+### Key Capabilities Included:
+- **🔄 Optimized Native Routing:** Zero-latency direct-to-Go streaming, bypassing bulky intermediate proxies for high-throughput gRPC-Web RPCs.
+- **🛡️ Enterprise Security:** Google Single Sign-On (SSO) and IAP out of the box, with automatic token-based authentication and secure loopback controls.
+- **🔌 Native Google Workspace MCP Server:** Asynchronous operations with Google Gmail, Drive, Sheets, and Calendar without client browser dependencies.
+- **⚡ On-demand Deep Research:** Native FastMCP server running highly intensive agentic research loops using Gemini.
+- **🎨 Custom Model Droplist:** A clean UI dropdown offering selection of Google Gemini models (3.5 Flash, 3.1 Pro, etc.) with automated Vertex AI translation.
+
+---
+
+## 💡 Why We Built Antigravity Web
+
+While Google Antigravity is a groundbreaking agentic framework, its out-of-the-box experience is designed for local desktop development (using loopbacks like localhost). Transitioning Antigravity to a remote, collaborative, or enterprise setting introduced several core challenges that **Antigravity Web Hub** solves:
+
+### 1. Persistent, Long-Running Agent Workspaces
+Local desktop execution ties the agentic process to your machine’s power state and network connection. When utilizing long-running execution commands (like the `/goal` command), you need a persistent, headless remote server. The Web Hub runs on a dedicated VM, allowing cascades to execute overnight or in the background without interruptions.
+
+### 2. Resolving Remote Model API Limitations
+In "external builds" or headless remote environments, Antigravity's direct client-side Gemini communication path is prone to failure (e.g., throwing `GetChatMessage is unimplemented` errors). We resolved this by routing all model interactions through a local sidecar that safely wraps, cleans, and translates standard agent payloads into standard Vertex AI API calls.
+
+### 3. Native Integration with Google Workspace
+Instead of relying on browser-based OAuth flows or local user sessions, our architecture integrates a server-side Node-based Google Workspace MCP server using service accounts or a secure headless OAuth flow. This allows your agent to read emails, write spreadsheets, and schedule calendar meetings directly on the cloud server.
+
+### 4. Zero-Latency Streaming Under Load
+Serving a complex real-time SPA over a load balancer often results in proxy timeouts or HTTP/2 protocol resets (such as `ERR_HTTP2_PROTOCOL_ERROR` or RST_STREAM errors) when using standard WSGI/ASGI proxies. We built a direct-to-Nginx routing matrix that serves static assets and high-frequency streaming events with zero intermediate hops.
+
+---
+
+## 🏗️ High-Level Architecture (How It Is Built)
+
+The architecture is built for maximum reliability, absolute security, and minimum latency. It is divided into three primary layers: **Access Layer**, **Routing & Orchestration**, and **Model / Tool Integration**.
 
 ```
-Browser → GCP HTTPS LB (IAP) → nginx :8080
-                                 ├── GetUserStatus & StartCascade → ccpa_mock.py :8083
-                                 └── Everything else → language_server :8081
+┌────────────────────────────────────────────────────────────────────────┐
+│                          1. Access Layer                               │
+│  User Browser ───[ HTTPS / Google SSO ]───► GCP Load Balancer (IAP)     │
+└──────────────────────────────────┬─────────────────────────────────────┘
+                                   │ h2
+                                   ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│                          2. Routing & Orchestration (Nginx)            │
+│                 ┌────────────── Nginx :8080 ──────────────┐            │
+│                 │                                         │            │
+│  /GetUserStatus │ /StartCascade            Streaming RPCs │ Assets     │
+│                 ▼                                         ▼            │
+│         ccpa_mock.py :8083                      language_server :8081  │
+│      (Python sidecar & Vertex)                  (Go native SDK)        │
+└─────────────────┬─────────────────────────────────────────┬────────────┘
+                  │                                         │
+┌─────────────────┼─────────────────────────────────────────┼────────────┐
+│                 │        3. Models & Tools Integration    │            │
+│                 ▼                                         ▼            │
+│         Vertex AI API                          Native MCP Configuration│
+│   (streamGenerateContent)                      ├── google_workspace    │
+│                                                └── deep_research       │
+└────────────────────────────────────────────────────────────────────────┘
 ```
+
+### Component Breakdown:
+
+1. **GCP Classic HTTPS Load Balancer (IAP Protected):**
+   Acts as the single public entry-point (via `https://antigravity.customertests.info/`). Google Identity-Aware Proxy (IAP) handles user authentication and blocks any unauthorized requests before they ever reach the VM.
+2. **Nginx Reverse Proxy (`:8080`):**
+   Handles the intelligent path routing:
+   - **Streaming/Asset Traffic:** High-performance real-time RPCs (like `StreamAgentStateUpdates`) and client-side SPA files route directly to Google's native Go `language_server` on port `8081`.
+   - **Control/API Traffic:** Requests like `GetUserStatus` and `StartCascade` are proxied to `ccpa_mock.py` on port `8083` to inject custom model dropdown items and establish cascade configurations.
+3. **Native Go `language_server` (`:8081`):**
+   The core engine from Google's public Antigravity SDK. It runs in `--standalone` and `--subclient_type=hub` modes. It hosts the real chat trajectories, maintains SQLite conversational databases (`~/.gemini/antigravity/conversations/`), and orchestrates the MCP servers.
+4. **Python Sidecar `ccpa_mock.py` (`:8083`):**
+   A lightweight, FastAPI-free Python process that provides:
+   - Dynamic injection of custom model configs in the dropdown list (e.g., Gemini 3.5 Flash, 3.1 Pro, etc.).
+   - Model request translation to remove incompatible keys.
+   - Live streaming proxying to Vertex AI via Google Application Default Credentials (ADC).
+5. **Native MCP Servers:**
+   The `language_server` manages tool execution natively via `mcp.json`:
+   - `google_workspace` (Node.js): Direct headless integration with Drive, Sheets, Gmail, and Calendar.
+   - `deep_research` (Python FastMCP): Exposes structured internet research capabilities using Google Gemini and web-search scrapers.
+
 
 ## Prerequisites
 
