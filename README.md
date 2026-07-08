@@ -19,24 +19,6 @@ Running on a headless Google Cloud Platform (GCP) VM (`jumpstation`), the Web Hu
 
 ---
 
-## 💡 Why We Built Antigravity Web
-
-While Google Antigravity is a groundbreaking agentic framework, its out-of-the-box experience is designed for local desktop development (using loopbacks like localhost). Transitioning Antigravity to a remote, collaborative, or enterprise setting introduced several core challenges that **Antigravity Web Hub** solves:
-
-### 1. Persistent, Long-Running Agent Workspaces
-Local desktop execution ties the agentic process to your machine’s power state and network connection. When utilizing long-running execution commands (like the `/goal` command), you need a persistent, headless remote server. The Web Hub runs on a dedicated VM, allowing cascades to execute overnight or in the background without interruptions.
-
-### 2. Resolving Remote Model API Limitations
-In "external builds" or headless remote environments, Antigravity's direct client-side Gemini communication path is prone to failure (e.g., throwing `GetChatMessage is unimplemented` errors). We resolved this by routing all model interactions through a local sidecar that safely wraps, cleans, and translates standard agent payloads into standard Vertex AI API calls.
-
-### 3. Native Integration with Google Workspace
-Instead of relying on browser-based OAuth flows or local user sessions, our architecture integrates a server-side Node-based Google Workspace MCP server using service accounts or a secure headless OAuth flow. This allows your agent to read emails, write spreadsheets, and schedule calendar meetings directly on the cloud server.
-
-### 4. Zero-Latency Streaming Under Load
-Serving a complex real-time SPA over a load balancer often results in proxy timeouts or HTTP/2 protocol resets (such as `ERR_HTTP2_PROTOCOL_ERROR` or RST_STREAM errors) when using standard WSGI/ASGI proxies. We built a direct-to-Nginx routing matrix that serves static assets and high-frequency streaming events with zero intermediate hops.
-
----
-
 ## 🏗️ High-Level Architecture (How It Is Built)
 
 The architecture is built for maximum reliability, absolute security, and minimum latency. It is divided into three primary layers: **Access Layer**, **Routing & Orchestration**, and **Model / Tool Integration**.
