@@ -5,9 +5,10 @@ const { CallToolRequestSchema, ListToolsRequestSchema } = require("@modelcontext
 const { google } = require('googleapis');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 const TOKEN_PATH = path.join(__dirname, 'tokens.json');
-const ADC_PATH = '/home/admin_mgenchev_altostrat_com/.config/gcloud/application_default_credentials.json';
+const ADC_PATH = path.join(os.homedir(), '.config/gcloud/application_default_credentials.json');
 
 // Initialize MCP Server
 const server = new Server(

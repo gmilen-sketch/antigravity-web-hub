@@ -21,7 +21,7 @@ A Node-based MCP server that interacts directly with Google Workspace APIs (Cale
   ```json
   "google_workspace": {
     "command": "node",
-    "args": ["/home/admin_mgenchev_altostrat_com/my-mcp-server/index.js"]
+    "args": ["/home/<your-username>/my-mcp-server/index.js"]
   }
   ```
 

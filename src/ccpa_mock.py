@@ -16,7 +16,7 @@ _server_ready.set()
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 
-PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", "firsttestproject-343414")
+PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", "your-project-id")
 LOCATION = os.environ.get("GOOGLE_CLOUD_REGION", "us-central1")
 
 _token_cache = {"token": "", "expires_at": 0}
@@ -840,7 +840,7 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
         elif "fetchUserInfo" in self.path:
             response_data = {
                 "userSettings": {"telemetryEnabled": False},
-                "email": self.headers.get('X-User-Email') or self.headers.get('X-Goog-Authenticated-User-Email') or os.environ.get('CCPA_MOCK_EMAIL', 'admin@mgenchev.altostrat.com'),
+                "email": self.headers.get('X-User-Email') or self.headers.get('X-Goog-Authenticated-User-Email') or os.environ.get('CCPA_MOCK_EMAIL', 'user@example.com'),
                 "userTier": {"userTier": "USER_TIER_PRO"},
             }
         elif "listExperiments" in self.path or "ListExperiments" in self.path:
