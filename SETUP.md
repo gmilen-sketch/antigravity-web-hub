@@ -2,9 +2,10 @@
 
 This guide is designed for **Cloud Engineers (CEs)** and **SREs** to deploy and configure the Antigravity 2.0 Standalone Web Hub with minimal friction.
 
-We provide two deployment options:
-* **Option A (Recommended): One-Shot Automated Bootstrap** – Orchestrates the GCE VM, Global HTTPS Load Balancer, SSL certificates, Identity-Aware Proxy (IAP), and systemd service installation in a single click from your local workstation.
-* **Option B: Manual VM Installation** – For cases where you already have a configured VM and want to run the installer locally.
+We provide three deployment options:
+* **Option A (Recommended): One-Shot Automated Terraform Module** – Provision everything declaratively with 100% Argolis Org Policy compliance (Shielded VM, OS Login, IAP Load Balancer, custom subnets).
+* **Option B: One-Shot Workstation Script (`bootstrap_all.sh`)** – Orchestrates GCE VM, LB, and SSL certificates from your local terminal.
+* **Option C: Manual VM-Side Installation** – For cases where you already have a configured VM and want to run the installer locally.
 
 ---
 
@@ -19,7 +20,51 @@ Before starting, ensure your local workstation has:
 
 ---
 
-## Option A: One-Shot Automated Bootstrap (Recommended)
+## Option A: One-Shot Automated Terraform Module (Argolis Ready - Recommended)
+
+This option uses Terraform to provision the complete infrastructure declaratively, adhering to all default Argolis security policies (`compute.requireShieldedVm`, `compute.requireOsLogin`, `compute.vmExternalIpAccess`, `compute.skipDefaultNetworkCreation`).
+
+### 1. Clone & Navigate to `terraform/`
+```bash
+git clone https://github.com/cloud-gtm/antigravity-web-hub.git
+cd antigravity-web-hub/terraform
+```
+
+### 2. Configure `terraform.tfvars`
+```bash
+cp terraform.tfvars.example terraform.tfvars
+nano terraform.tfvars
+```
+Set `project_id` to your Argolis project ID and `iap_members` to your email:
+```hcl
+project_id  = "your-argolis-project-id"
+zone        = "us-central1-a"
+iap_members = ["user:you@example.com"]
+```
+
+### 3. Deploy Infrastructure
+```bash
+terraform init
+terraform apply
+```
+
+Outputs will display your reserved `public_url` and `iap_ssh_command`.
+
+### 4. Install Web Hub Software
+SSH into the newly created VM using IAP:
+```bash
+eval $(terraform output -raw iap_ssh_command)
+```
+Inside the VM, clone and run the installer:
+```bash
+git clone https://github.com/cloud-gtm/antigravity-web-hub.git
+cd antigravity-web-hub
+sudo -E scripts/install.sh
+```
+
+---
+
+## Option B: One-Shot Workstation Script (`bootstrap_all.sh`)
 
 This method provisions and wires up everything from your workstation. No manual VM ssh/configuration is required.
 

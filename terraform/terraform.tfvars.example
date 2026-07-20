@@ -1,0 +1,11 @@
+project_id    = "your-argolis-project-id"
+region        = "us-central1"
+zone          = "us-central1-a"
+instance_name = "antigravity-web-hub"
+machine_type  = "e2-standard-2"
+iap_members   = [
+  "user:yourname@example.com"
+]
+
+# Optional custom domain (Leave empty to use <ip>.nip.io)
+# public_domain = "antigravity.mycompany.com"
