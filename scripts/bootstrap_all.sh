@@ -41,7 +41,9 @@ TAR_FILE="/tmp/antigravity-hub-deploy.tar.gz"
 # Ensure language_server binary is packaged from local workstation if not present in repo bin/
 if [ ! -f "$REPO_ROOT/bin/language_server" ]; then
   LOCAL_SERVER=""
-  if [ -f "$HOME/.gemini/antigravity/bin/language_server" ]; then
+  if [ -f "/tmp/antigravity-web-hub/bin/language_server" ]; then
+    LOCAL_SERVER="/tmp/antigravity-web-hub/bin/language_server"
+  elif [ -f "$HOME/.gemini/antigravity/bin/language_server" ]; then
     LOCAL_SERVER="$HOME/.gemini/antigravity/bin/language_server"
   elif [ -f "/usr/local/google/home/$USER/.gemini/antigravity/bin/language_server" ]; then
     LOCAL_SERVER="/usr/local/google/home/$USER/.gemini/antigravity/bin/language_server"
@@ -53,6 +55,7 @@ if [ ! -f "$REPO_ROOT/bin/language_server" ]; then
     chmod 0755 "$REPO_ROOT/bin/language_server"
   fi
 fi
+
 
 echo "→ Packaging repository into $TAR_FILE..."
 tar --exclude='.git' --exclude='venv' --exclude='node_modules' -czf "$TAR_FILE" -C "$REPO_ROOT" .
