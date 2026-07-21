@@ -22,7 +22,7 @@ Before starting, ensure your local workstation has:
 
 ## Option A: One-Shot Automated Terraform Module (Argolis Ready - Recommended)
 
-This option uses Terraform to provision the complete infrastructure declaratively, adhering to all default Argolis security policies (`compute.requireShieldedVm`, `compute.requireOsLogin`, `compute.vmExternalIpAccess`, `compute.skipDefaultNetworkCreation`).
+This option uses Terraform to provision the complete infrastructure declaratively, adhering to all default Argolis security policies (`compute.requireShieldedVm`, `compute.requireOsLogin`, `compute.vmExternalIpAccess`, `compute.skipDefaultNetworkCreation`), and automatically binds `roles/aiplatform.user` for Vertex AI model streaming.
 
 ### 1. Clone & Navigate to `terraform/`
 ```bash
@@ -45,22 +45,18 @@ iap_members = ["user:you@example.com"]
 ### 3. Deploy Infrastructure
 ```bash
 terraform init
-terraform apply
+terraform apply -auto-approve
 ```
 
-Outputs will display your reserved `public_url` and `iap_ssh_command`.
+### 4. Bootstrap Web Hub Software
+Return to the repository root and deploy the software package to the newly created VM automatically:
+```bash
+cd ..
+./scripts/bootstrap_all.sh
+```
 
-### 4. Install Web Hub Software
-SSH into the newly created VM using IAP:
-```bash
-eval $(terraform output -raw iap_ssh_command)
-```
-Inside the VM, clone and run the installer:
-```bash
-git clone https://github.com/cloud-gtm/antigravity-web-hub.git
-cd antigravity-web-hub
-sudo -E scripts/install.sh
-```
+Your web hub will be accessible at the `public_url` printed by Terraform (e.g. `https://<ip>.nip.io/`).
+
 
 ---
 

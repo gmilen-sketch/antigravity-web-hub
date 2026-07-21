@@ -83,20 +83,24 @@ The architecture is built for maximum reliability, absolute security, and minimu
 
 For a zero-friction, automated deployment from your local workstation, or for step-by-step manual setup instructions, please see the comprehensive **[SETUP.md](SETUP.md)** guide.
 
-### Quick Start (One-Shot Bootstrap)
+### Quick Start (Terraform 1-Click Deployment)
 
-The quickest way to deploy the entire Web Hub (VM, Load Balancer, SSL certs, and IAP Auth) is using our one-shot workstation orchestrator:
+The easiest way to deploy the entire Web Hub (VPC, Cloud NAT, VM, Load Balancer, SSL certs, IAP Auth, and Vertex AI IAM access) is via Terraform:
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/gmilen-sketch/antigravity-web-hub.git
+git clone https://github.com/cloud-gtm/antigravity-web-hub.git
 cd antigravity-web-hub
 
-# 2. Configure your environment
-cp .env.example .env
-nano .env
+# 2. Configure Terraform variables
+cd terraform
+cp terraform.tfvars.example terraform.tfvars
+nano terraform.tfvars   # Set project_id and iap_members
 
-# 3. Provision and deploy
+# 3. Provision Infrastructure & Bootstrap Software
+terraform init
+terraform apply -auto-approve
+cd ..
 ./scripts/bootstrap_all.sh
 ```
 
