@@ -38,8 +38,25 @@ echo "===== 3/3  Install hub on VM (via SSH-over-IAP) ====="
 REMOTE_DIR="/tmp/antigravity-web-hub"
 TAR_FILE="/tmp/antigravity-hub-deploy.tar.gz"
 
+# Ensure language_server binary is packaged from local workstation if not present in repo bin/
+if [ ! -f "$REPO_ROOT/bin/language_server" ]; then
+  LOCAL_SERVER=""
+  if [ -f "$HOME/.gemini/antigravity/bin/language_server" ]; then
+    LOCAL_SERVER="$HOME/.gemini/antigravity/bin/language_server"
+  elif [ -f "/usr/local/google/home/$USER/.gemini/antigravity/bin/language_server" ]; then
+    LOCAL_SERVER="/usr/local/google/home/$USER/.gemini/antigravity/bin/language_server"
+  fi
+  if [ -n "$LOCAL_SERVER" ]; then
+    echo "→ Found local language_server binary at $LOCAL_SERVER — copying into deployment package..."
+    mkdir -p "$REPO_ROOT/bin"
+    cp "$LOCAL_SERVER" "$REPO_ROOT/bin/language_server"
+    chmod 0755 "$REPO_ROOT/bin/language_server"
+  fi
+fi
+
 echo "→ Packaging repository into $TAR_FILE..."
 tar --exclude='.git' --exclude='venv' --exclude='node_modules' -czf "$TAR_FILE" -C "$REPO_ROOT" .
+
 
 echo "→ Transferring archive to VM..."
 gcloud_retry gcloud --quiet --project=$GOOGLE_CLOUD_PROJECT compute ssh $VM_NAME --zone=$VM_ZONE --tunnel-through-iap \
