@@ -69,8 +69,17 @@ gcloud_retry gcloud --quiet --project=$GOOGLE_CLOUD_PROJECT compute scp --tunnel
   "$TAR_FILE" "$VM_NAME:/tmp/hub.tar.gz"
 
 echo "→ Unpacking archive & running installer on VM..."
+if [ -f "$HOME/.config/gcloud/application_default_credentials.json" ]; then
+  echo "→ Transferring workstation Application Default Credentials (ADC) to VM..."
+  gcloud_retry gcloud --quiet --project=$GOOGLE_CLOUD_PROJECT compute ssh $VM_NAME --zone=$VM_ZONE --tunnel-through-iap \
+    --command="mkdir -p ~/.config/gcloud"
+  gcloud_retry gcloud --quiet --project=$GOOGLE_CLOUD_PROJECT compute scp --tunnel-through-iap --zone=$VM_ZONE \
+    "$HOME/.config/gcloud/application_default_credentials.json" "$VM_NAME:~/.config/gcloud/application_default_credentials.json"
+fi
+
 gcloud_retry gcloud --quiet --project=$GOOGLE_CLOUD_PROJECT compute ssh $VM_NAME --zone=$VM_ZONE --tunnel-through-iap \
   --command="tar -xzf /tmp/hub.tar.gz -C $REMOTE_DIR && cd $REMOTE_DIR && sudo -E bash scripts/install.sh"
+
 
 echo
 echo "===== DONE ====="
