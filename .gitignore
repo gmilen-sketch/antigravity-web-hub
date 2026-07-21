@@ -19,3 +19,11 @@ claude_cascades/
 *.db
 *.log
 brain/
+
+# Terraform
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/*.tfstate*
+terraform/terraform.tfvars
+# Binaries
+bin/

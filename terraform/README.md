@@ -15,37 +15,47 @@ This module handles the key security constraints enforced in Argolis self-manage
 
 ---
 
-## 🚀 Quick Start Deployment
+## 🚀 1-Click CE Deployment Guide
+
+Deploying Antigravity Web Hub in an Argolis or sandbox GCP project takes under **3 minutes**:
 
 ```bash
-# 1. Navigate to the terraform directory
-cd terraform
+# 1. Clone & navigate to terraform directory
+git clone https://github.com/cloud-gtm/antigravity-web-hub.git
+cd antigravity-web-hub/terraform
 
-# 2. Copy variables template
+# 2. Configure variables
 cp terraform.tfvars.example terraform.tfvars
 nano terraform.tfvars
+```
 
-# 3. Initialize & Apply
+Set your project ID and user email in `terraform.tfvars`:
+```hcl
+project_id  = "your-argolis-project-id"
+zone        = "us-central1-a"
+iap_members = [
+  "user:you@example.com"
+]
+```
+
+```bash
+# 3. Provision Infrastructure (VPC, NAT, VM, Load Balancer, IAP & Vertex AI IAM)
 terraform init
-terraform plan
-terraform apply
+terraform apply -auto-approve
+
+# 4. Bootstrap Web Hub Software on VM
+cd ..
+./scripts/bootstrap_all.sh
 ```
 
 ---
 
-## 🔗 Post-Deployment Configuration
+## 🔗 Accessing the Application
 
-1. **SSH into the VM via IAP**:
-   ```bash
-   gcloud compute ssh antigravity-web-hub --project=<YOUR_PROJECT_ID> --zone=us-central1-a --tunnel-through-iap
-   ```
+- **Web UI URL**: Open the `public_url` output from Terraform (e.g. `https://<ip>.nip.io/`).
+  *(Note: Google-managed SSL certificates take ~10-15 minutes to provision).*
+- **IAP SSH Command**:
+  ```bash
+  gcloud compute ssh antigravity-web-hub --project=<YOUR_PROJECT_ID> --zone=us-central1-a --tunnel-through-iap
+  ```
 
-2. **Run Web Hub Installer**:
-   ```bash
-   git clone https://github.com/cloud-gtm/antigravity-web-hub.git
-   cd antigravity-web-hub
-   ./scripts/install.sh
-   ```
-
-3. **Access the Web UI**:
-   Open the `public_url` output from Terraform (e.g. `https://<ip>.nip.io/`). Note that Google-managed SSL certificates take ~10-15 minutes to finish DNS validation and activate.

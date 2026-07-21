@@ -29,6 +29,21 @@ resource "google_compute_subnetwork" "subnet" {
   network       = google_compute_network.vpc.id
 }
 
+resource "google_compute_router" "router" {
+  name    = "${var.name_prefix}-router"
+  region  = var.region
+  network = google_compute_network.vpc.id
+}
+
+resource "google_compute_router_nat" "nat" {
+  name                               = "${var.name_prefix}-nat"
+  router                             = google_compute_router.router.name
+  region                             = var.region
+  nat_ip_allocate_option             = "AUTO_ONLY"
+  source_subnetwork_ip_ranges_to_nat = "ALL_SUBNETWORKS_ALL_IP_RANGES"
+}
+
+
 # ------------------------------------------------------------------------------
 # 2. Firewall Rules (IAP Tunneling & LB Health Checks)
 # ------------------------------------------------------------------------------
@@ -139,7 +154,8 @@ resource "google_compute_instance" "hub_vm" {
 resource "google_compute_instance_group" "unmanaged_ig" {
   name        = "${var.name_prefix}-ig"
   zone        = var.zone
-  instances   = [google_compute_instance.hub_vm.id]
+  instances   = [google_compute_instance.hub_vm.self_link]
+
 
   named_port {
     name = "http"
@@ -223,3 +239,18 @@ resource "google_iap_web_backend_service_iam_binding" "iap_binding" {
   role                = "roles/iap.httpsResourceAccessor"
   members             = var.iap_members
 }
+
+# ------------------------------------------------------------------------------
+# 8. Project IAM Role for Vertex AI Access
+# ------------------------------------------------------------------------------
+data "google_compute_default_service_account" "default" {
+  project = var.project_id
+}
+
+resource "google_project_iam_member" "compute_sa_vertex_ai_user" {
+  project = var.project_id
+  role    = "roles/aiplatform.user"
+  member  = "serviceAccount:${data.google_compute_default_service_account.default.email}"
+}
+
+

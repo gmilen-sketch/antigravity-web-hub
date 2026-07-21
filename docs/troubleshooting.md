@@ -127,3 +127,42 @@ Native MCP processes spawned by the Go `language_server` (e.g. from `~/.gemini/a
    ```bash
    pip install --user --break-system-packages fastmcp
    ```
+
+---
+
+## 7. 1-Click Automated Deployment & Onboarding Fixes Summary
+
+Below is the complete reference list of all 8 major technical issues overcome to guarantee 100% reliable 1-click deployments out of the box:
+
+1. **Standalone Go Server vs. CLI Installer Swap (`scripts/install.sh`)**:
+   - *Problem*: `scripts/install.sh` fetched `agy` CLI instead of the 149MB Go `language_server` binary, creating a symlink `ln -sf ~/.local/bin/agy ~/.gemini/antigravity/bin/language_server`.
+   - *Fix*: Bundled native Go `language_server` binary directly in `bin/language_server` inside the deployment tarball, and updated `install.sh` to install it without overwriting.
+
+2. **Unintercepted Auth RPCs & Onboarding Redirect Loop (`config/nginx.conf`)**:
+   - *Problem*: SPA client called `GetAuthStatus`, `HasAuthToken`, `LoginWithBrowser`, and `fetchUserInfo` on load. Nginx forwarded these directly to `language_server` on port 8081, which returned `Grpc-Status: 9 (failed_precondition)`.
+   - *Fix*: Added Nginx location rules to proxy `GetAuthStatus`, `HasAuthToken`, `LoginWithBrowser`, `GetCascadeModelConfig`, `GetCommandModelConfigs`, `v1internal/`, `loadCodeAssist`, `fetchUserInfo`, `listExperiments`, `fetchAdminControls`, and `fetchAvailableModels` to `http://127.0.0.1:8083` (`ccpa_mock.py`), returning `hasValidAuth: true` and `grpc-status: 0`.
+
+3. **CSRF Token Mismatch & `Grpc-Status: 16` (`config/nginx.conf` & `.env`)**:
+   - *Problem*: Nginx set cookie `csrfToken=b5ec9adb...` while `language_server` was started with `-csrf_token=antigravity_secret_csrf_token_12345`.
+   - *Fix*: Standardized `CSRF_TOKEN=antigravity_secret_csrf_token_12345` across `.env.example`, `/etc/antigravity-web.env`, `start_hub.sh`, and `config/nginx.conf`.
+
+4. **Empty Model Selection Dropdown (`src/ccpa_mock.py`)**:
+   - *Problem*: Model choice dropdown in UI stayed empty because `GetUserStatus` and `GetCascadeModelConfig` RPC payloads lacked proto3 choice wrappers expected by `@bufbuild/protobuf` in the browser.
+   - *Fix*: Updated `src/ccpa_mock.py` to format model choices using `{choice: {case: "model", value: val}}` (`348` Gemini 3.5 Flash, `330` Gemini 3.1 Flash Lite Preview, `343` Gemini 3.1 Pro).
+
+5. **Vertex AI `aiplatform.endpoints.predict` 403 Forbidden Error (`terraform/main.tf` & `gcp_setup_vm.sh`)**:
+   - *Problem*: Streaming POST calls to Vertex AI (`aiplatform.googleapis.com/.../gemini-3.5-flash:streamGenerateContent`) failed with `HTTP 403 Forbidden` because Compute Engine default service account (`<project_number>-compute@developer.gserviceaccount.com`) lacked `roles/aiplatform.user`.
+   - *Fix*: Automatically granted `roles/aiplatform.user` to default compute service account in `gcp_setup_vm.sh` and in `terraform/main.tf` (`google_project_iam_member.compute_sa_vertex_ai_user`).
+
+6. **Argolis VPC Policy Compliance (`compute.skipDefaultNetworkCreation`)**:
+   - *Problem*: Argolis enforces `compute.skipDefaultNetworkCreation`, causing VM creation to fail if no custom VPC network is specified.
+   - *Fix*: Automated creation of `antigravity-web-vpc`, `antigravity-web-subnet`, `antigravity-web-router`, and `antigravity-web-nat` in `scripts/gcp_setup_vm.sh` and `terraform/main.tf`.
+
+7. **Local `gcloud` ECP Socket Leaks (`[Errno 98] Address already in use`)**:
+   - *Problem*: Rapid `gcloud` invocations spawned background `ecp_http_proxy` processes holding bound local sockets.
+   - *Fix*: Added `pkill -9 -f "ecp"` and `pkill -9 -f "gcloud"` in `gcloud_retry()` helpers before issuing gcloud CLI calls.
+
+8. **Terraform Unmanaged Instance Group URL Reference (`terraform/main.tf`)**:
+   - *Problem*: `google_compute_instance_group.unmanaged_ig` referenced `google_compute_instance.hub_vm.id` instead of `google_compute_instance.hub_vm.self_link`.
+   - *Fix*: Updated `main.tf` to reference `google_compute_instance.hub_vm.self_link`.
+

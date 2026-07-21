@@ -19,15 +19,38 @@ echo "===== 1/3  Create VM (skips if exists) ====="
 echo "===== 2/3  Provision LB + IAP ====="
 "$HERE/gcp_setup_lb.sh"
 
+gcloud_retry() {
+  local retries=5
+  local count=0
+  until "$@"; do
+    count=$((count + 1))
+    if [ $count -ge $retries ]; then
+      return 1
+    fi
+    echo "gcloud command failed — retrying ($count/$retries) in 3s..."
+    pkill -9 -f "gcloud" 2>/dev/null || true
+    pkill -9 -f "ecp" 2>/dev/null || true
+    sleep 3
+  done
+}
+
 echo "===== 3/3  Install hub on VM (via SSH-over-IAP) ====="
-# Rsync repo tree up, then run install.sh remotely.
 REMOTE_DIR="/tmp/antigravity-web-hub"
-gcloud --project=$GOOGLE_CLOUD_PROJECT compute ssh $VM_NAME --zone=$VM_ZONE --tunnel-through-iap \
-  --command="mkdir -p $REMOTE_DIR"
-gcloud --project=$GOOGLE_CLOUD_PROJECT compute scp --recurse --tunnel-through-iap --zone=$VM_ZONE \
-  ./ $VM_NAME:$REMOTE_DIR/
-gcloud --project=$GOOGLE_CLOUD_PROJECT compute ssh $VM_NAME --zone=$VM_ZONE --tunnel-through-iap \
-  --command="cd $REMOTE_DIR && sudo -E bash scripts/install.sh"
+TAR_FILE="/tmp/antigravity-hub-deploy.tar.gz"
+
+echo "→ Packaging repository into $TAR_FILE..."
+tar --exclude='.git' --exclude='venv' --exclude='node_modules' -czf "$TAR_FILE" -C "$REPO_ROOT" .
+
+echo "→ Transferring archive to VM..."
+gcloud_retry gcloud --quiet --project=$GOOGLE_CLOUD_PROJECT compute ssh $VM_NAME --zone=$VM_ZONE --tunnel-through-iap \
+  --command="rm -rf $REMOTE_DIR && mkdir -p $REMOTE_DIR"
+
+gcloud_retry gcloud --quiet --project=$GOOGLE_CLOUD_PROJECT compute scp --tunnel-through-iap --zone=$VM_ZONE \
+  "$TAR_FILE" "$VM_NAME:/tmp/hub.tar.gz"
+
+echo "→ Unpacking archive & running installer on VM..."
+gcloud_retry gcloud --quiet --project=$GOOGLE_CLOUD_PROJECT compute ssh $VM_NAME --zone=$VM_ZONE --tunnel-through-iap \
+  --command="tar -xzf /tmp/hub.tar.gz -C $REMOTE_DIR && cd $REMOTE_DIR && sudo -E bash scripts/install.sh"
 
 echo
 echo "===== DONE ====="

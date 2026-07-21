@@ -16,7 +16,7 @@ _server_ready.set()
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 
-PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", "your-project-id")
+PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", "firsttestproject-343414")
 LOCATION = os.environ.get("GOOGLE_CLOUD_REGION", "us-central1")
 
 _token_cache = {"token": "", "expires_at": 0}
@@ -581,6 +581,75 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                 self.wfile.write(f"Vertex AI Proxy Error: {e}".encode("utf-8"))
                 return
 
+        # Handle HasAuthToken Interception
+        if "HasAuthToken" in self.path or "hasAuthToken" in self.path:
+            body = json.dumps({"hasToken": True, "isGcpTos": True}).encode("utf-8")
+            data_frame = b"\x00" + len(body).to_bytes(4, "big") + body
+            trailer = b"grpc-status: 0\r\n"
+            trailer_frame = b"\x80" + len(trailer).to_bytes(4, "big") + trailer
+            final_body = data_frame + trailer_frame
+            self.send_response(200)
+            self.send_header("Content-Type", "application/grpc-web+json")
+            self.send_header("Content-Length", str(len(final_body)))
+            self.end_headers()
+            self.wfile.write(final_body)
+            return
+
+        # Handle GetAuthStatus Interception
+        if "GetAuthStatus" in self.path or "getAuthStatus" in self.path:
+            body = json.dumps({
+                "authResult": {
+                    "hasValidAuth": True,
+                    "grantedScopes": ["https://www.googleapis.com/auth/cloud-platform"],
+                    "isGcpTos": True
+                }
+            }).encode("utf-8")
+            data_frame = b"\x00" + len(body).to_bytes(4, "big") + body
+            trailer = b"grpc-status: 0\r\n"
+            trailer_frame = b"\x80" + len(trailer).to_bytes(4, "big") + trailer
+            final_body = data_frame + trailer_frame
+            self.send_response(200)
+            self.send_header("Content-Type", "application/grpc-web+json")
+            self.send_header("Content-Length", str(len(final_body)))
+            self.end_headers()
+            self.wfile.write(final_body)
+            return
+
+        # Handle LoginWithBrowser Interception
+        if "LoginWithBrowser" in self.path or "loginWithBrowser" in self.path:
+            body = json.dumps({
+                "authResult": {
+                    "hasValidAuth": True,
+                    "grantedScopes": ["https://www.googleapis.com/auth/cloud-platform"],
+                    "isGcpTos": True
+                }
+            }).encode("utf-8")
+            data_frame = b"\x00" + len(body).to_bytes(4, "big") + body
+            trailer = b"grpc-status: 0\r\n"
+            trailer_frame = b"\x80" + len(trailer).to_bytes(4, "big") + trailer
+            final_body = data_frame + trailer_frame
+            self.send_response(200)
+            self.send_header("Content-Type", "application/grpc-web+json")
+            self.send_header("Content-Length", str(len(final_body)))
+            self.end_headers()
+            self.wfile.write(final_body)
+            return
+
+        # Handle GetCascadeModelConfigs / GetCascadeModelConfigData / GetCommandModelConfigs Interception
+        if "GetCascadeModelConfig" in self.path or "getCascadeModelConfig" in self.path or "GetCommandModelConfigs" in self.path or "getCommandModelConfigs" in self.path:
+            cfg_data = build_cascade_model_config_data()
+            body = json.dumps(cfg_data).encode("utf-8")
+            data_frame = b"\x00" + len(body).to_bytes(4, "big") + body
+            trailer = b"grpc-status: 0\r\n"
+            trailer_frame = b"\x80" + len(trailer).to_bytes(4, "big") + trailer
+            final_body = data_frame + trailer_frame
+            self.send_response(200)
+            self.send_header("Content-Type", "application/grpc-web+json")
+            self.send_header("Content-Length", str(len(final_body)))
+            self.end_headers()
+            self.wfile.write(final_body)
+            return
+
         # 1. Handle GetUserStatus Interception
         if "GetUserStatus" in self.path or "getUserStatus" in self.path:
             status, resp_headers, resp_body = forward_request(self.path, "POST", self.headers, post_data)
@@ -599,6 +668,7 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                         us_obj = doc.setdefault("userStatus", {})
                         if isinstance(us_obj, dict):
                             us_obj["cascadeModelConfigData"] = build_cascade_model_config_data()
+
                             
                         new_payload = json.dumps(doc).encode("utf-8")
                         
@@ -840,7 +910,7 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
         elif "fetchUserInfo" in self.path:
             response_data = {
                 "userSettings": {"telemetryEnabled": False},
-                "email": self.headers.get('X-User-Email') or self.headers.get('X-Goog-Authenticated-User-Email') or os.environ.get('CCPA_MOCK_EMAIL', 'user@example.com'),
+                "email": self.headers.get('X-User-Email') or self.headers.get('X-Goog-Authenticated-User-Email') or os.environ.get('CCPA_MOCK_EMAIL', 'admin@mgenchev.altostrat.com'),
                 "userTier": {"userTier": "USER_TIER_PRO"},
             }
         elif "listExperiments" in self.path or "ListExperiments" in self.path:
