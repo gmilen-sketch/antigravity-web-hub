@@ -35,11 +35,13 @@ cd antigravity-web-hub/terraform
 cp terraform.tfvars.example terraform.tfvars
 nano terraform.tfvars
 ```
-Set `project_id` to your Argolis project ID and `iap_members` to your email:
+Set `project_id` to your Argolis project ID and `iap_members` to your Argolis Admin user email (`admin@<name>.altostrat.com` or `user:$(gcloud config get-value account)`):
+> **Note for Argolis**: Argolis Organization Policy (`constraints/iam.allowedPolicyMemberDomains`) restricts IAP IAM bindings to `@altostrat.com` domain identities. Ensure you specify your `admin@...altostrat.com` account.
+
 ```hcl
 project_id  = "your-argolis-project-id"
 zone        = "us-central1-a"
-iap_members = ["user:you@example.com"]
+iap_members = ["user:admin@yourname.altostrat.com"]
 ```
 
 ### 3. Deploy Infrastructure

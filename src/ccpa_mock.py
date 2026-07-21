@@ -58,22 +58,47 @@ def extract_cascade_id(body: bytes, is_json: bool) -> str:
     return cascade_id
 
 def get_adc_token() -> str:
-    """Fetches and caches fresh GCP OAuth access token via ADC."""
+    """Fetches and caches fresh GCP OAuth access token via GCE metadata server or ADC."""
     now = time.time()
     if now < _token_cache["expires_at"]:
         return _token_cache["token"]
+
+    # 1. Prefer VM Compute Engine default service account token (has roles/aiplatform.user)
     try:
+        req = urllib.request.Request(
+            "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
+            headers={"Metadata-Flavor": "Google"}
+        )
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            token = data.get("access_token")
+            if token:
+                _token_cache["token"] = token
+                _token_cache["expires_at"] = now + 3000
+                logging.info("Fetched fresh GCE metadata service account token for Vertex AI bridge.")
+                return token
+    except Exception as ex:
+        logging.warning(f"Could not fetch GCE metadata token: {ex}")
+
+    # 2. Fallback to gcloud auth application-default print-access-token
+    try:
+        env = dict(os.environ)
+        env["CLOUDSDK_CONTEXT_AWARE_ACCESS_DISABLE_ECP"] = "true"
         token = subprocess.check_output(
             ["gcloud", "auth", "application-default", "print-access-token"],
             text=True,
+            env=env
         ).strip()
-        _token_cache["token"] = token
-        _token_cache["expires_at"] = now + 3000
-        logging.info("Fetched fresh ADC token for Vertex AI bridge.")
-        return token
+        if token:
+            _token_cache["token"] = token
+            _token_cache["expires_at"] = now + 3000
+            logging.info("Fetched fresh ADC token for Vertex AI bridge.")
+            return token
     except Exception as e:
         logging.error(f"Failed to fetch ADC token: {e}")
-        return ""
+
+    return ""
+
 
 def read_request_body(handler) -> bytes:
     """Safely reads request body supporting Content-Length and Transfer-Encoding: chunked."""
