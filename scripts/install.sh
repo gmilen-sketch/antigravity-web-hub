@@ -129,7 +129,68 @@ if [ -d "src/playwright_scraper" ]; then
   install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/playwright_scraper/playwright_mcp_server.py "$BIN_DIR/playwright_scraper/playwright_mcp_server.py"
 fi
 
-# ---- 5a. Configure automatic WAL database optimization cron job ----------
+# ---- 5a. Configure installed MCP servers in Antigravity configuration ----
+echo "Registering installed MCP servers in Antigravity configuration..."
+sudo -u "$RUN_USER" python3 -c "
+import json, os
+bin_dir = '$BIN_DIR'
+home = '$RUN_HOME'
+
+mcp_cfg = {
+  'mcpServers': {
+    'deep_research': {
+      'command': 'python3',
+      'args': [f'{bin_dir}/mcp_deep_research.py', '--transport', 'stdio'],
+      'env': {},
+      'disabled': False
+    },
+    'knowledge_graph': {
+      'command': 'python3',
+      'args': [f'{bin_dir}/knowledge_graph/kg_mcp_server.py'],
+      'env': {},
+      'disabled': False
+    },
+    'diagram_renderer': {
+      'command': 'python3',
+      'args': [f'{bin_dir}/diagram_renderer/diagram_mcp_server.py'],
+      'env': {},
+      'disabled': False
+    },
+    'six_hats_evaluator': {
+      'command': 'python3',
+      'args': [f'{bin_dir}/six_hats_evaluator/six_hats_mcp_server.py'],
+      'env': {},
+      'disabled': False
+    },
+    'playwright_scraper': {
+      'command': 'python3',
+      'args': [f'{bin_dir}/playwright_scraper/playwright_mcp_server.py'],
+      'env': {},
+      'disabled': False
+    },
+    'google_workspace': {
+      'command': 'node',
+      'args': [f'{bin_dir}/mcp_google_workspace/index.js'],
+      'env': {},
+      'disabled': False
+    }
+  }
+}
+
+paths = [
+  f'{home}/.gemini/config/mcp_config.json',
+  f'{home}/.gemini/antigravity/mcp_config.json',
+  f'{home}/.gemini/mcp_config.json',
+  f'{home}/.gemini/config/mcp_servers.json',
+]
+
+for p in paths:
+  os.makedirs(os.path.dirname(p), exist_ok=True)
+  with open(p, 'w') as f:
+    json.dump(mcp_cfg, f, indent=2)
+" || true
+
+# ---- 5b. Configure automatic WAL database optimization cron job ----------
 echo "Configuring automatic SQLite WAL database optimizer cron job..."
 (sudo -u "$RUN_USER" crontab -l 2>/dev/null | grep -v "ensure_wal.py" || true; echo "* * * * * $BIN_DIR/ensure_wal.py > /dev/null 2>&1") | sudo -u "$RUN_USER" crontab -
 
