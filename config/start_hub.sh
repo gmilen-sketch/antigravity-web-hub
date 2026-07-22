@@ -73,7 +73,7 @@ echo "Starting language_server natively..."
     --override_oauth_client_id="${OAUTH_CLIENT_ID}" \
     --override_oauth_client_secret="${OAUTH_CLIENT_SECRET}" \
     -csrf_token="${CSRF_TOKEN}" \
-    --override_model_name="gemini-3.5-flash" \
+    --override_model_name="${MODEL_NAME:-gemini-3.6-flash}" \
     --local_chrome_headless=true \
     --local_chrome_user_data_dir="$LS_CHROME_DIR" \
     --app_data_dir="antigravity" \

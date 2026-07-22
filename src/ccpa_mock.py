@@ -128,24 +128,30 @@ def read_request_body(handler) -> bytes:
 
 def map_model_name(requested_model_from_payload):
     if not requested_model_from_payload or not isinstance(requested_model_from_payload, str):
-        return "gemini-3.5-flash"
+        return "gemini-3.6-flash"
     req_lower = requested_model_from_payload.lower()
+    if "3.6" in req_lower:
+        return "gemini-3.6-flash"
+    if "lite" in req_lower or "light" in req_lower or "3.5-flash-lite" in req_lower:
+        return "gemini-3.5-flash-lite"
     if "pro" in req_lower:
         return "gemini-3.1-pro-preview"
-    if "lite" in req_lower:
-        return "gemini-3.1-flash-lite"
-    return "gemini-3.5-flash"
+    if "3.5" in req_lower:
+        return "gemini-3.5-flash"
+    return "gemini-3.6-flash"
 
 PORT = 8083
 
-DEFAULT_MODEL_ENUM = 348
+DEFAULT_MODEL_ENUM = 350
 DEFAULT_MODEL_NAME = "MODEL_GOOGLE_GEMINI_RIFTRUNNER"
 
 DROPDOWN_MODELS = [
+    ("Gemini 3.6 Flash",              350),
+    ("Gemini 3.5 Flash Lite",         335),
     ("Gemini 3.5 Flash",              348),
-    ("Gemini 3.1 Flash Lite Preview", 330),
     ("Gemini 3.1 Pro",                343),
 ]
+
 
 
 def moa(val):
@@ -999,6 +1005,16 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
         elif "fetchAvailableModels" in self.path:
             response_data = {
                 "availableModels": [
+                    {
+                        "name": "gemini-3.6-flash",
+                        "displayName": "Gemini 3.6 Flash",
+                        "supportedFeatures": ["CHAT"]
+                    },
+                    {
+                        "name": "gemini-3.5-flash-lite",
+                        "displayName": "Gemini 3.5 Flash Lite",
+                        "supportedFeatures": ["CHAT"]
+                    },
                     {
                         "name": "gemini-3.5-flash",
                         "displayName": "Gemini 3.5 Flash",
