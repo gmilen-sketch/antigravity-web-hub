@@ -4,6 +4,20 @@ All notable changes to the **Antigravity Web Hub** project will be documented in
 
 ---
 
+## [2.2.0] - 2026-07-22
+
+### 🚀 Added
+- **N4 Machine Type Family Migration**: Upgraded default VM machine type from `e2-standard-2` to `n4-standard-2` (5th Gen Intel Xeon Emerald Rapids) across Terraform (`variables.tf`, `terraform.tfvars`), setup scripts (`gcp_setup_vm.sh`), and environment configurations for significantly higher memory bandwidth and faster model routing.
+- **Automated Google Cloud API Enablement**: Added declarative `google_project_service` resources in Terraform (`terraform/main.tf`) and automated `gcloud services enable` calls across all shell scripts (`scripts/gcp_setup_vm.sh`, `scripts/gcp_setup_lb.sh`). This automatically activates the 6 core required Google APIs on any fresh project:
+  1. `compute.googleapis.com` (Compute Engine API)
+  2. `iap.googleapis.com` (Cloud Identity-Aware Proxy API)
+  3. `aiplatform.googleapis.com` (Vertex AI API)
+  4. `iam.googleapis.com` (Identity and Access Management API)
+  5. `cloudresourcemanager.googleapis.com` (Cloud Resource Manager API)
+  6. `serviceusage.googleapis.com` (Service Usage API)
+
+---
+
 ## [2.1.0] - 2026-07-21
 
 ### 🚀 Added

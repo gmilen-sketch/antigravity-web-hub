@@ -12,11 +12,27 @@ set -a; . ./.env; set +a
 : "${GOOGLE_CLOUD_PROJECT:?}"
 : "${VM_NAME:?add to .env}"
 : "${VM_ZONE:?add to .env}"
-VM_MACHINE_TYPE="${VM_MACHINE_TYPE:-e2-standard-2}"
+
+# Auto-detect actual VM zone if instance already exists in GCP
+DETECTED_ZONE=$(gcloud --quiet --project="$GOOGLE_CLOUD_PROJECT" compute instances list --filter="name=$VM_NAME" --format="value(zone)" 2>/dev/null | head -n 1 || true)
+if [ -n "$DETECTED_ZONE" ]; then
+  VM_ZONE="$DETECTED_ZONE"
+fi
+
+VM_MACHINE_TYPE="${VM_MACHINE_TYPE:-n4-standard-2}"
 DATA_DISK_GB="${DATA_DISK_GB:-100}"
 
 REGION=$(echo "$VM_ZONE" | cut -d- -f1,2)
 NAME_PREFIX="${NAME_PREFIX:-antigravity-web}"
+
+echo "→ Ensuring all required Google Cloud APIs are enabled..."
+gcloud --quiet --project=$GOOGLE_CLOUD_PROJECT services enable \
+  compute.googleapis.com \
+  iap.googleapis.com \
+  aiplatform.googleapis.com \
+  iam.googleapis.com \
+  cloudresourcemanager.googleapis.com \
+  serviceusage.googleapis.com 2>/dev/null || true
 
 echo "→ Ensuring VPC network, subnet, and Cloud NAT exist for Argolis compliance..."
 gcloud --project=$GOOGLE_CLOUD_PROJECT compute networks create ${NAME_PREFIX}-vpc --subnet-mode=custom 2>/dev/null || true
