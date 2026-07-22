@@ -1,0 +1,37 @@
+{
+  "version": "1.0",
+  "modules": [
+    {
+      "id": "knowledge_graph",
+      "name": "Knowledge Graph Long-Term Memory",
+      "description": "Persistent graph dataset, 0ms shared-memory cache (/dev/shm/kg_warm_cache.json), and automatic 1-to-2 hop prompt context injection for agents.",
+      "default": true,
+      "files": [
+        "src/knowledge_graph/kg_engine.py",
+        "src/knowledge_graph/init_knowledge_graph.py",
+        "src/knowledge_graph/kg_mcp_server.py"
+      ],
+      "env_flag": "ENABLE_KNOWLEDGE_GRAPH"
+    },
+    {
+      "id": "deep_research",
+      "name": "On-Demand Deep Research FastMCP",
+      "description": "Multi-stage deep research engine using Gemini Vertex AI streaming endpoints for complex customer investigations.",
+      "default": true,
+      "files": [
+        "src/mcp_deep_research.py"
+      ],
+      "env_flag": "ENABLE_DEEP_RESEARCH"
+    },
+    {
+      "id": "google_workspace",
+      "name": "Google Workspace MCP Server",
+      "description": "Native Node.js MCP server connecting Drive, Docs, Sheets, and Gmail operations.",
+      "default": true,
+      "files": [
+        "src/mcp_google_workspace/index.js"
+      ],
+      "env_flag": "ENABLE_WORKSPACE_MCP"
+    }
+  ]
+}

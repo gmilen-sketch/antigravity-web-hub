@@ -1,3 +1,4 @@
+import sys
 import http.server
 import socketserver
 import json
@@ -917,6 +918,52 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
             self.forward_and_stream(self.path, "POST", self.headers, body)
             return
 
+        # Handle Knowledge Graph Long-Term Memory API
+        if "/api/kg" in self.path:
+            try:
+                for candidate_dir in [
+                    os.path.join(os.path.dirname(os.path.abspath(__file__)), "knowledge_graph"),
+                    os.path.expanduser("~/.gemini/antigravity/bin/knowledge_graph"),
+                    "/tmp/antigravity-web-hub/src/knowledge_graph"
+                ]:
+                    if os.path.exists(candidate_dir) and candidate_dir not in sys.path:
+                        sys.path.insert(0, candidate_dir)
+                from kg_engine import get_kg_engine
+                kg = get_kg_engine()
+                
+                if "subgraph" in self.path:
+                    target_id = self.path.split("target=")[-1] if "target=" in self.path else "infra:n4_compute_vm"
+                    ctx = kg.get_subgraph_context(target_id)
+                    resp_obj = {"context": ctx, "target": target_id}
+                elif "search" in self.path:
+                    q = self.path.split("q=")[-1] if "q=" in self.path else ""
+                    results = kg.search_nodes(q)
+                    resp_obj = {"results": results, "query": q}
+                elif "upsert" in self.path:
+                    doc = json.loads(post_data.decode("utf-8")) if post_data else {}
+                    node = kg.upsert_node(doc.get("id", "entity"), doc.get("label", "Entity"), doc.get("type", "entity"), doc.get("description", ""))
+                    resp_obj = {"status": "success", "node": node}
+                else:
+                    resp_obj = {"nodes": list(kg.nodes.values()), "edges": kg.edges, "version": "1.0"}
+                
+                body = json.dumps(resp_obj).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            except Exception as ex:
+                logging.error(f"KG API Error in do_POST: {ex}")
+                err_body = json.dumps({"error": str(ex)}).encode("utf-8")
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(err_body)))
+                self.end_headers()
+                self.wfile.write(err_body)
+                return
+
         # 4. Handle CCPA Mocking
         response_data = {}
         if "loadCodeAssist" in self.path:
@@ -978,6 +1025,47 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
         logging.info(f"--- RECEIVED GET ---")
         logging.info(f"Path: {self.path}")
         
+        if "/api/kg" in self.path:
+            try:
+                for candidate_dir in [
+                    os.path.join(os.path.dirname(os.path.abspath(__file__)), "knowledge_graph"),
+                    os.path.expanduser("~/.gemini/antigravity/bin/knowledge_graph"),
+                    "/tmp/antigravity-web-hub/src/knowledge_graph"
+                ]:
+                    if os.path.exists(candidate_dir) and candidate_dir not in sys.path:
+                        sys.path.insert(0, candidate_dir)
+                from kg_engine import get_kg_engine
+                kg = get_kg_engine()
+                
+                if "subgraph" in self.path:
+                    target_id = self.path.split("target=")[-1] if "target=" in self.path else "infra:n4_compute_vm"
+                    ctx = kg.get_subgraph_context(target_id)
+                    resp_obj = {"context": ctx, "target": target_id}
+                elif "search" in self.path:
+                    q = self.path.split("q=")[-1] if "q=" in self.path else ""
+                    results = kg.search_nodes(q)
+                    resp_obj = {"results": results, "query": q}
+                else:
+                    resp_obj = {"nodes": list(kg.nodes.values()), "edges": kg.edges, "version": "1.0"}
+                
+                body = json.dumps(resp_obj).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            except Exception as ex:
+                logging.error(f"KG API Error in do_GET: {ex}")
+                err_body = json.dumps({"error": str(ex)}).encode("utf-8")
+                self.send_response(500)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(err_body)))
+                self.end_headers()
+                self.wfile.write(err_body)
+                return
+
         if "/api/create-project-dir" in self.path:
             import urllib.parse
             parsed = urllib.parse.urlparse(self.path)

@@ -88,13 +88,22 @@ fi
 
 # ---- 5. Install source into the Antigravity SDK bin dir -----------------
 BIN_DIR="$RUN_HOME/.gemini/antigravity/bin"
-mkdir -p "$BIN_DIR"
+mkdir -p "$BIN_DIR/knowledge_graph"
 chown -R "$RUN_USER:$RUN_USER" "$RUN_HOME/.gemini"
 rm -f "$BIN_DIR/proxy.py"
 install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/ccpa_mock.py         "$BIN_DIR/ccpa_mock.py"
 install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/ensure_wal.py        "$BIN_DIR/ensure_wal.py"
 install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/mcp_deep_research.py "$BIN_DIR/mcp_deep_research.py"
 install -o "$RUN_USER" -g "$RUN_USER" -m 0755 config/start_hub.sh      "$BIN_DIR/start_hub.sh"
+
+# Install Knowledge Graph Long-Term Memory module files
+if [ -d "src/knowledge_graph" ]; then
+  echo "Installing Knowledge Graph Long-Term Memory module..."
+  install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/knowledge_graph/kg_engine.py          "$BIN_DIR/knowledge_graph/kg_engine.py"
+  install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/knowledge_graph/init_knowledge_graph.py "$BIN_DIR/knowledge_graph/init_knowledge_graph.py"
+  install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/knowledge_graph/kg_mcp_server.py      "$BIN_DIR/knowledge_graph/kg_mcp_server.py"
+  sudo -u "$RUN_USER" python3 "$BIN_DIR/knowledge_graph/init_knowledge_graph.py" || true
+fi
 
 # ---- 5a. Configure automatic WAL database optimization cron job ----------
 echo "Configuring automatic SQLite WAL database optimizer cron job..."
