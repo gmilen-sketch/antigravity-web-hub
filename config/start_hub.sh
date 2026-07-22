@@ -21,6 +21,16 @@ export ANTIGRAVITY_PROJECT_ID="${GOOGLE_CLOUD_PROJECT}"
 
 BIN_DIR="$HOME/.gemini/antigravity/bin"
 
+# 1. Initialize & Start Knowledge Graph Long-Term Memory (if enabled)
+ENABLE_KNOWLEDGE_GRAPH="${ENABLE_KNOWLEDGE_GRAPH:-true}"
+KG_PID=""
+if [ "$ENABLE_KNOWLEDGE_GRAPH" = "true" ]; then
+    echo "Initializing Knowledge Graph Long-Term Memory..."
+    python3 "$BIN_DIR/knowledge_graph/init_knowledge_graph.py" 2>/dev/null || true
+    python3 "$BIN_DIR/knowledge_graph/kg_mcp_server.py" > /tmp/kg_mcp.log 2>&1 &
+    KG_PID=$!
+fi
+
 # Start the mock CCPA server to bypass Cloud Code Private API blockers
 echo "Starting CCPA Mock Server..."
 python3 "$BIN_DIR/ccpa_mock.py" > /tmp/ccpa_mock.log 2>&1 &
@@ -52,7 +62,7 @@ LS_PID=$!
 # Propagate terminate signals to children gracefully
 cleanup() {
     echo "Stopping Antigravity Web Hub processes..."
-    kill -TERM "$LS_PID" "$MOCK_PID" 2>/dev/null
+    kill -TERM "$LS_PID" "$MOCK_PID" $KG_PID 2>/dev/null
     wait "$LS_PID" 2>/dev/null
     wait "$MOCK_PID" 2>/dev/null
     echo "Web Hub stopped successfully."

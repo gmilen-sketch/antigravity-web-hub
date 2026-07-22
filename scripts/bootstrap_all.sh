@@ -19,6 +19,17 @@ if [ -n "$DETECTED_ZONE" ]; then
   VM_ZONE="$DETECTED_ZONE"
 fi
 
+ENABLE_KG="${ENABLE_KNOWLEDGE_GRAPH:-true}"
+ENABLE_RESEARCH="${ENABLE_DEEP_RESEARCH:-true}"
+ENABLE_WORKSPACE="${ENABLE_WORKSPACE_MCP:-true}"
+
+echo "===== Antigravity Web Hub Module Setup ====="
+echo "  [✓] Core Web Hub & Vertex AI Routing (Default)"
+echo "  [$([ "$ENABLE_KG" = "true" ] && echo "✓" || echo " ")] Knowledge Graph Long-Term Memory (0ms cache & context injection)"
+echo "  [$([ "$ENABLE_RESEARCH" = "true" ] && echo "✓" || echo " ")] On-Demand Deep Research FastMCP Server"
+echo "  [$([ "$ENABLE_WORKSPACE" = "true" ] && echo "✓" || echo " ")] Native Google Workspace MCP Server"
+echo "============================================"
+
 echo "===== 1/3  Create VM (skips if exists) ====="
 "$HERE/gcp_setup_vm.sh"
 
