@@ -982,7 +982,7 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
         elif "fetchUserInfo" in self.path:
             response_data = {
                 "userSettings": {"telemetryEnabled": False},
-                "email": self.headers.get('X-User-Email') or self.headers.get('X-Goog-Authenticated-User-Email') or os.environ.get('CCPA_MOCK_EMAIL', 'admin@mgenchev.altostrat.com'),
+                "email": self.headers.get('X-User-Email') or self.headers.get('X-Goog-Authenticated-User-Email') or os.environ.get('CCPA_MOCK_EMAIL', 'admin@example.com'),
                 "userTier": {"userTier": "USER_TIER_PRO"},
             }
         elif "listExperiments" in self.path or "ListExperiments" in self.path:

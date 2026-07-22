@@ -165,7 +165,7 @@ The Web Hub includes a headless, native Google Workspace MCP integration. To ena
 3. Select Application Type: **Web application**.
 4. Add authorized redirect URIs:
    - `https://vertexaisearch.cloud.google.com/static/oauth/oauth.html`
-   - `https://pantheon.corp.google.com/connectors/oauth?project=YOUR_PROJECT_ID`
+   - `https://console.cloud.google.com/apis/credentials/consent?project=YOUR_PROJECT_ID`
 5. Click **Create** and copy your **Client ID** and **Client Secret**.
 
 ### 2. Add to Environment
