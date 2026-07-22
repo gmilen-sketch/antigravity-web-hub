@@ -24,7 +24,8 @@ set -a; . ./.env; set +a
 : "${GOOGLE_CLOUD_PROJECT:?set in .env}"
 : "${VM_NAME:?add to .env — the jumpstation VM name}"
 : "${VM_ZONE:?add to .env — e.g. us-central1-a}"
-: "${IAP_USERS:?add to .env — comma-separated list of user:you@example.com,group:eng@…}"
+IAP_USERS="${IAP_USERS:-user:$(gcloud config get-value account 2>/dev/null || echo 'admin@example.com')}"
+
 
 # Auto-detect actual VM zone if instance already exists in GCP
 DETECTED_ZONE=$(gcloud --quiet --project="$GOOGLE_CLOUD_PROJECT" compute instances list --filter="name=$VM_NAME" --format="value(zone)" 2>/dev/null | head -n 1 || true)
