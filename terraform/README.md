@@ -11,7 +11,8 @@ This module handles the key security constraints enforced in Argolis self-manage
 2. **OS Login Enforcement (`compute.requireOsLogin`)**: Sets `enable-oslogin = TRUE`.
 3. **No Direct External IP (`compute.vmExternalIpAccess`)**: Keeps the GCE VM strictly internal without a public IP on its interface. Traffic is securely routed through the Global HTTPS Load Balancer, and SSH is handled via IAP Tunneling.
 4. **No Service Account Key Export (`iam.disableServiceAccountKeyCreation`)**: Relies on VM default service accounts and Application Default Credentials (ADC).
-5. **Custom Subnetwork (`compute.skipDefaultNetworkCreation`)**: Explicitly provisions a dedicated VPC and Subnet.
+6. **Automated API Enablement**: Automatically enables `compute.googleapis.com`, `iap.googleapis.com`, `aiplatform.googleapis.com`, `iam.googleapis.com`, `cloudresourcemanager.googleapis.com`, and `serviceusage.googleapis.com`.
+7. **High-Performance Compute Default**: Defaults to 5th Gen Intel Xeon `n4-standard-2` for optimal inference throughput and responsiveness.
 
 ---
 
@@ -31,10 +32,11 @@ nano terraform.tfvars
 
 Set your project ID and user email in `terraform.tfvars`:
 ```hcl
-project_id  = "your-argolis-project-id"
-zone        = "us-central1-a"
+project_id   = "your-argolis-project-id"
+zone         = "us-central1-a"
+machine_type = "n4-standard-2"
 iap_members = [
-  "user:you@example.com"
+  "user:admin@yourname.altostrat.com"
 ]
 ```
 

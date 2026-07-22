@@ -29,6 +29,15 @@ set -a; . ./.env; set +a
 NAME_PREFIX="${NAME_PREFIX:-antigravity-web}"
 PROJECT=$GOOGLE_CLOUD_PROJECT
 
+echo "→ Ensuring all required Google Cloud APIs are enabled..."
+gcloud --quiet --project=$PROJECT services enable \
+  compute.googleapis.com \
+  iap.googleapis.com \
+  aiplatform.googleapis.com \
+  iam.googleapis.com \
+  cloudresourcemanager.googleapis.com \
+  serviceusage.googleapis.com 2>/dev/null || true
+
 gcloud_retry() {
   local retries=5
   local count=0
