@@ -23,7 +23,7 @@ variable "instance_name" {
 
 variable "machine_type" {
   type        = string
-  default     = "e2-standard-2"
+  default     = "n4-standard-2"
   description = "Machine type for the GCE instance."
 }
 

@@ -13,6 +13,12 @@ set -a; . ./.env; set +a
 : "${VM_NAME:?}"
 : "${VM_ZONE:?}"
 
+# Auto-detect actual VM zone if instance already exists in GCP
+DETECTED_ZONE=$(gcloud --quiet --project="$GOOGLE_CLOUD_PROJECT" compute instances list --filter="name=$VM_NAME" --format="value(zone)" 2>/dev/null | head -n 1 || true)
+if [ -n "$DETECTED_ZONE" ]; then
+  VM_ZONE="$DETECTED_ZONE"
+fi
+
 echo "===== 1/3  Create VM (skips if exists) ====="
 "$HERE/gcp_setup_vm.sh"
 

@@ -26,8 +26,23 @@ set -a; . ./.env; set +a
 : "${VM_ZONE:?add to .env — e.g. us-central1-a}"
 : "${IAP_USERS:?add to .env — comma-separated list of user:you@example.com,group:eng@…}"
 
+# Auto-detect actual VM zone if instance already exists in GCP
+DETECTED_ZONE=$(gcloud --quiet --project="$GOOGLE_CLOUD_PROJECT" compute instances list --filter="name=$VM_NAME" --format="value(zone)" 2>/dev/null | head -n 1 || true)
+if [ -n "$DETECTED_ZONE" ]; then
+  VM_ZONE="$DETECTED_ZONE"
+fi
+
 NAME_PREFIX="${NAME_PREFIX:-antigravity-web}"
 PROJECT=$GOOGLE_CLOUD_PROJECT
+
+echo "→ Ensuring all required Google Cloud APIs are enabled..."
+gcloud --quiet --project=$PROJECT services enable \
+  compute.googleapis.com \
+  iap.googleapis.com \
+  aiplatform.googleapis.com \
+  iam.googleapis.com \
+  cloudresourcemanager.googleapis.com \
+  serviceusage.googleapis.com 2>/dev/null || true
 
 gcloud_retry() {
   local retries=5

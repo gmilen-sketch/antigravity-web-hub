@@ -15,19 +15,20 @@ provider "google" {
 }
 
 # ------------------------------------------------------------------------------
-# 0. Enable Required GCP APIs
+# 0. Enable Required Google Cloud APIs
 # ------------------------------------------------------------------------------
 locals {
   required_services = [
     "compute.googleapis.com",
     "iap.googleapis.com",
-    "servicehealth.googleapis.com",
-    "logging.googleapis.com",
-    "aiplatform.googleapis.com"
+    "aiplatform.googleapis.com",
+    "iam.googleapis.com",
+    "cloudresourcemanager.googleapis.com",
+    "serviceusage.googleapis.com"
   ]
 }
 
-resource "google_project_service" "apis" {
+resource "google_project_service" "services" {
   for_each           = toset(local.required_services)
   project            = var.project_id
   service            = each.key
@@ -40,7 +41,7 @@ resource "google_project_service" "apis" {
 resource "google_compute_network" "vpc" {
   name                    = "${var.name_prefix}-vpc"
   auto_create_subnetworks = false
-  depends_on              = [google_project_service.apis]
+  depends_on              = [google_project_service.services]
 }
 
 resource "google_compute_subnetwork" "subnet" {
@@ -259,6 +260,7 @@ resource "google_iap_web_backend_service_iam_binding" "iap_binding" {
   web_backend_service = google_compute_backend_service.backend.name
   role                = "roles/iap.httpsResourceAccessor"
   members             = var.iap_members
+  depends_on          = [google_project_service.services]
 }
 
 # ------------------------------------------------------------------------------
@@ -266,13 +268,14 @@ resource "google_iap_web_backend_service_iam_binding" "iap_binding" {
 # ------------------------------------------------------------------------------
 data "google_compute_default_service_account" "default" {
   project    = var.project_id
-  depends_on = [google_project_service.apis]
+  depends_on = [google_project_service.services]
 }
 
 resource "google_project_iam_member" "compute_sa_vertex_ai_user" {
-  project = var.project_id
-  role    = "roles/aiplatform.user"
-  member  = "serviceAccount:${data.google_compute_default_service_account.default.email}"
+  project    = var.project_id
+  role       = "roles/aiplatform.user"
+  member     = "serviceAccount:${data.google_compute_default_service_account.default.email}"
+  depends_on = [google_project_service.services]
 }
 
 

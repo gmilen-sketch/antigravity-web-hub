@@ -16,13 +16,26 @@ Before starting, ensure your local workstation has:
    ```bash
    gcloud auth login
    ```
-2. **Owner or Editor permissions** on your target GCP project (required to create Load Balancers, IAP OAuth brands, and GCE instances).
+2. **Owner or Editor permissions** on your target GCP project (required to enable Google APIs, create Load Balancers, IAP OAuth brands, and GCE instances).
+
+### Required Google Cloud APIs
+
+Both the Terraform module and the shell scripts automatically enable the required Google Cloud APIs. If you wish to pre-enable them manually, run:
+```bash
+gcloud services enable \
+  compute.googleapis.com \
+  iap.googleapis.com \
+  aiplatform.googleapis.com \
+  iam.googleapis.com \
+  cloudresourcemanager.googleapis.com \
+  serviceusage.googleapis.com
+```
 
 ---
 
 ## Option A: One-Shot Automated Terraform Module (Argolis Ready - Recommended)
 
-This option uses Terraform to provision the complete infrastructure declaratively, adhering to all default Argolis security policies (`compute.requireShieldedVm`, `compute.requireOsLogin`, `compute.vmExternalIpAccess`, `compute.skipDefaultNetworkCreation`), and automatically binds `roles/aiplatform.user` for Vertex AI model streaming.
+This option uses Terraform to provision the complete infrastructure declaratively, adhering to all default Argolis security policies (`compute.requireShieldedVm`, `compute.requireOsLogin`, `compute.vmExternalIpAccess`, `compute.skipDefaultNetworkCreation`), automatically enabling all required Google Cloud APIs, sizing the VM to `n4-standard-2`, and automatically binding `roles/aiplatform.user` for Vertex AI model streaming.
 
 ### 1. Clone & Navigate to `terraform/`
 ```bash
@@ -39,9 +52,10 @@ Set `project_id` to your Argolis project ID and `iap_members` to your Argolis Ad
 > **Note for Argolis**: Argolis Organization Policy (`constraints/iam.allowedPolicyMemberDomains`) restricts IAP IAM bindings to `@altostrat.com` domain identities. Ensure you specify your `admin@...altostrat.com` account.
 
 ```hcl
-project_id  = "your-argolis-project-id"
-zone        = "us-central1-a"
-iap_members = ["user:admin@yourname.altostrat.com"]
+project_id   = "your-argolis-project-id"
+zone         = "us-central1-a"
+machine_type = "n4-standard-2"
+iap_members  = ["user:admin@yourname.altostrat.com"]
 ```
 
 ### 3. Deploy Infrastructure
