@@ -1,4 +1,8 @@
-# Antigravity Web Hub
+# Antigravity Web Hub (v3.0.0 - Stable Release)
+
+[![Release](https://img.shields.io/badge/Release-v3.0.0--Stable-brightgreen.svg)](CHANGELOG.md)
+[![Platform](https://img.shields.io/badge/Google%20Cloud-N4%20Emerald%20Rapids-blue.svg)](https://cloud.google.com/compute/docs/general-purpose-machines#n4_machines)
+[![Security](https://img.shields.io/badge/Security-IAP%20Zero--Trust-success.svg)](https://cloud.google.com/iap)
 
 An enterprise-ready, headless GCP VM deployment and architecture for Google Antigravity Web, featuring native optimizations, multi-model routing, and robust API integrations.
 
