@@ -12,6 +12,13 @@ set -a; . ./.env; set +a
 : "${GOOGLE_CLOUD_PROJECT:?}"
 : "${VM_NAME:?add to .env}"
 : "${VM_ZONE:?add to .env}"
+
+# Auto-detect actual VM zone if instance already exists in GCP
+DETECTED_ZONE=$(gcloud --quiet --project="$GOOGLE_CLOUD_PROJECT" compute instances list --filter="name=$VM_NAME" --format="value(zone)" 2>/dev/null | head -n 1 || true)
+if [ -n "$DETECTED_ZONE" ]; then
+  VM_ZONE="$DETECTED_ZONE"
+fi
+
 VM_MACHINE_TYPE="${VM_MACHINE_TYPE:-n4-standard-2}"
 DATA_DISK_GB="${DATA_DISK_GB:-100}"
 
