@@ -105,6 +105,30 @@ if [ -d "src/knowledge_graph" ]; then
   sudo -u "$RUN_USER" python3 "$BIN_DIR/knowledge_graph/init_knowledge_graph.py" || true
 fi
 
+# Install Diagram Renderer module
+if [ -d "src/diagram_renderer" ]; then
+  echo "Installing Offline Diagram Renderer module..."
+  mkdir -p "$BIN_DIR/diagram_renderer"
+  install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/diagram_renderer/render_mermaid.py     "$BIN_DIR/diagram_renderer/render_mermaid.py"
+  install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/diagram_renderer/diagram_mcp_server.py "$BIN_DIR/diagram_renderer/diagram_mcp_server.py"
+fi
+
+# Install Six Thinking Hats Reasoning module
+if [ -d "src/six_hats_evaluator" ]; then
+  echo "Installing Six Thinking Hats Evaluator module..."
+  mkdir -p "$BIN_DIR/six_hats_evaluator"
+  install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/six_hats_evaluator/six_hats.py           "$BIN_DIR/six_hats_evaluator/six_hats.py"
+  install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/six_hats_evaluator/six_hats_mcp_server.py "$BIN_DIR/six_hats_evaluator/six_hats_mcp_server.py"
+fi
+
+# Install Playwright Web Scraper module
+if [ -d "src/playwright_scraper" ]; then
+  echo "Installing Playwright Headless Web Scraper module..."
+  mkdir -p "$BIN_DIR/playwright_scraper"
+  install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/playwright_scraper/playwright_scraper.py    "$BIN_DIR/playwright_scraper/playwright_scraper.py"
+  install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/playwright_scraper/playwright_mcp_server.py "$BIN_DIR/playwright_scraper/playwright_mcp_server.py"
+fi
+
 # ---- 5a. Configure automatic WAL database optimization cron job ----------
 echo "Configuring automatic SQLite WAL database optimizer cron job..."
 (sudo -u "$RUN_USER" crontab -l 2>/dev/null | grep -v "ensure_wal.py" || true; echo "* * * * * $BIN_DIR/ensure_wal.py > /dev/null 2>&1") | sudo -u "$RUN_USER" crontab -

@@ -21,14 +21,37 @@ export ANTIGRAVITY_PROJECT_ID="${GOOGLE_CLOUD_PROJECT}"
 
 BIN_DIR="$HOME/.gemini/antigravity/bin"
 
-# 1. Initialize & Start Knowledge Graph Long-Term Memory (if enabled)
+# 1. Initialize & Start Selectable Additional Modules
 ENABLE_KNOWLEDGE_GRAPH="${ENABLE_KNOWLEDGE_GRAPH:-true}"
-KG_PID=""
-if [ "$ENABLE_KNOWLEDGE_GRAPH" = "true" ]; then
-    echo "Initializing Knowledge Graph Long-Term Memory..."
+ENABLE_DIAGRAM_RENDERER="${ENABLE_DIAGRAM_RENDERER:-true}"
+ENABLE_SIX_HATS="${ENABLE_SIX_HATS:-true}"
+ENABLE_PLAYWRIGHT="${ENABLE_PLAYWRIGHT:-true}"
+
+MODULE_PIDS=""
+
+if [ "$ENABLE_KNOWLEDGE_GRAPH" = "true" ] && [ -f "$BIN_DIR/knowledge_graph/kg_mcp_server.py" ]; then
+    echo "Starting Knowledge Graph Long-Term Memory FastMCP..."
     python3 "$BIN_DIR/knowledge_graph/init_knowledge_graph.py" 2>/dev/null || true
     python3 "$BIN_DIR/knowledge_graph/kg_mcp_server.py" > /tmp/kg_mcp.log 2>&1 &
-    KG_PID=$!
+    MODULE_PIDS="$MODULE_PIDS $!"
+fi
+
+if [ "$ENABLE_DIAGRAM_RENDERER" = "true" ] && [ -f "$BIN_DIR/diagram_renderer/diagram_mcp_server.py" ]; then
+    echo "Starting Diagram Renderer FastMCP..."
+    python3 "$BIN_DIR/diagram_renderer/diagram_mcp_server.py" > /tmp/diagram_mcp.log 2>&1 &
+    MODULE_PIDS="$MODULE_PIDS $!"
+fi
+
+if [ "$ENABLE_SIX_HATS" = "true" ] && [ -f "$BIN_DIR/six_hats_evaluator/six_hats_mcp_server.py" ]; then
+    echo "Starting Six Thinking Hats Evaluator FastMCP..."
+    python3 "$BIN_DIR/six_hats_evaluator/six_hats_mcp_server.py" > /tmp/six_hats_mcp.log 2>&1 &
+    MODULE_PIDS="$MODULE_PIDS $!"
+fi
+
+if [ "$ENABLE_PLAYWRIGHT" = "true" ] && [ -f "$BIN_DIR/playwright_scraper/playwright_mcp_server.py" ]; then
+    echo "Starting Playwright Web Scraper FastMCP..."
+    python3 "$BIN_DIR/playwright_scraper/playwright_mcp_server.py" > /tmp/playwright_mcp.log 2>&1 &
+    MODULE_PIDS="$MODULE_PIDS $!"
 fi
 
 # Start the mock CCPA server to bypass Cloud Code Private API blockers
@@ -62,7 +85,7 @@ LS_PID=$!
 # Propagate terminate signals to children gracefully
 cleanup() {
     echo "Stopping Antigravity Web Hub processes..."
-    kill -TERM "$LS_PID" "$MOCK_PID" $KG_PID 2>/dev/null
+    kill -TERM "$LS_PID" "$MOCK_PID" $MODULE_PIDS 2>/dev/null
     wait "$LS_PID" 2>/dev/null
     wait "$MOCK_PID" 2>/dev/null
     echo "Web Hub stopped successfully."
