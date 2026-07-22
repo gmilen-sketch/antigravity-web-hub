@@ -17,7 +17,9 @@ CORE_ENTITIES = [
     ("infra:n4_compute_vm", "Google Cloud N4 VM", "infrastructure", "5th Gen Intel Xeon Emerald Rapids compute engine hosting Antigravity Web Hub."),
     ("infra:hyperdisk_balanced", "Hyperdisk Balanced", "infrastructure", "High-performance block storage backend attached to N4 compute instance."),
     ("infra:classic_https_lb", "GCP Classic HTTPS Load Balancer", "infrastructure", "Public ingress load balancer terminating SSL and enforcing IAP zero-trust authentication."),
-    ("model:gemini_3_5_flash", "Gemini 3.5 Flash", "model", "Ultra-low-latency default reasoning model served via Vertex AI streaming SSE."),
+    ("model:gemini_3_6_flash", "Gemini 3.6 Flash", "model", "Ultra-fast default reasoning model served via Vertex AI streaming SSE."),
+    ("model:gemini_3_5_flash_lite", "Gemini 3.5 Flash Lite", "model", "High-throughput lightweight reasoning model for instant inline completions."),
+    ("model:gemini_3_5_flash", "Gemini 3.5 Flash", "model", "Low-latency reasoning model served via Vertex AI streaming SSE."),
     ("model:gemini_3_1_pro", "Gemini 3.1 Pro", "model", "Deep reasoning model for multi-stage research and complex architectural analysis."),
     ("mcp:knowledge_graph", "Knowledge Graph Long-Term Memory", "mcp_server", "FastMCP memory engine providing 0ms shared-memory reads and graph context injection."),
     ("mcp:deep_research", "On-Demand Deep Research", "mcp_server", "FastMCP server executing multi-agent research loops over internal and external docs."),
@@ -27,7 +29,8 @@ CORE_ENTITIES = [
 CORE_EDGES = [
     ("infra:n4_compute_vm", "infra:hyperdisk_balanced", "attaches_storage", 1.0),
     ("infra:classic_https_lb", "infra:n4_compute_vm", "routes_traffic_to", 1.0),
-    ("infra:n4_compute_vm", "model:gemini_3_5_flash", "streams_inference_from", 1.0),
+    ("infra:n4_compute_vm", "model:gemini_3_6_flash", "streams_inference_from", 1.0),
+    ("infra:n4_compute_vm", "model:gemini_3_5_flash_lite", "streams_inference_from", 1.0),
     ("infra:n4_compute_vm", "mcp:knowledge_graph", "executes_module", 1.0),
     ("infra:n4_compute_vm", "mcp:deep_research", "executes_module", 1.0),
     ("infra:n4_compute_vm", "mcp:google_workspace", "executes_module", 1.0)
