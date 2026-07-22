@@ -102,10 +102,11 @@ resource "google_compute_firewall" "allow_lb_hc" {
 # 3. Disks & Compute VM (Argolis Shielded VM & OS Login Compliant)
 # ------------------------------------------------------------------------------
 resource "google_compute_disk" "data_disk" {
-  name = "${var.instance_name}-data"
-  type = local.disk_type
-  zone = var.zone
-  size = var.data_disk_size_gb
+  name       = "${var.instance_name}-data"
+  type       = local.disk_type
+  zone       = var.zone
+  size       = var.data_disk_size_gb
+  depends_on = [google_project_service.services]
 
   lifecycle {
     prevent_destroy = false
@@ -116,6 +117,7 @@ resource "google_compute_instance" "hub_vm" {
   name         = var.instance_name
   machine_type = var.machine_type
   zone         = var.zone
+  depends_on   = [google_project_service.services]
 
   boot_disk {
     initialize_params {
@@ -187,7 +189,8 @@ resource "google_compute_instance_group" "unmanaged_ig" {
 }
 
 resource "google_compute_health_check" "hc" {
-  name = "${var.name_prefix}-hc"
+  name       = "${var.name_prefix}-hc"
+  depends_on = [google_project_service.services]
 
   tcp_health_check {
     port = 8080
@@ -198,7 +201,8 @@ resource "google_compute_health_check" "hc" {
 # 5. Reserved Global IP & SSL Certificate
 # ------------------------------------------------------------------------------
 resource "google_compute_global_address" "static_ip" {
-  name = "${var.name_prefix}-ip"
+  name       = "${var.name_prefix}-ip"
+  depends_on = [google_project_service.services]
 }
 
 locals {

@@ -12,6 +12,8 @@ set -a; . ./.env; set +a
 : "${GOOGLE_CLOUD_PROJECT:?}"
 : "${VM_NAME:?}"
 : "${VM_ZONE:?}"
+export IAP_USERS="${IAP_USERS:-user:$(gcloud config get-value account 2>/dev/null || echo 'admin@example.com')}"
+
 
 # Auto-detect actual VM zone if instance already exists in GCP
 DETECTED_ZONE=$(gcloud --quiet --project="$GOOGLE_CLOUD_PROJECT" compute instances list --filter="name=$VM_NAME" --format="value(zone)" 2>/dev/null | head -n 1 || true)
