@@ -45,6 +45,11 @@ gcloud --project=$GOOGLE_CLOUD_PROJECT compute instances describe $VM_NAME --zon
   echo "  VM already exists — skipping."
   exit 0
 }
+DISK_TYPE="pd-balanced"
+if [[ "$VM_MACHINE_TYPE" == n4* ]]; then
+  DISK_TYPE="hyperdisk-balanced"
+fi
+
 gcloud --project=$GOOGLE_CLOUD_PROJECT compute instances create $VM_NAME \
   --zone=$VM_ZONE \
   --machine-type=$VM_MACHINE_TYPE \
@@ -52,8 +57,8 @@ gcloud --project=$GOOGLE_CLOUD_PROJECT compute instances create $VM_NAME \
   --subnet=${NAME_PREFIX}-subnet \
   --no-address \
   --image-family=debian-12 --image-project=debian-cloud \
-  --boot-disk-size=20GB --boot-disk-type=pd-balanced \
-  --create-disk="name=${VM_NAME}-data,size=${DATA_DISK_GB}GB,type=pd-balanced,auto-delete=no" \
+  --boot-disk-size=20GB --boot-disk-type=$DISK_TYPE \
+  --create-disk="name=${VM_NAME}-data,size=${DATA_DISK_GB}GB,type=$DISK_TYPE,auto-delete=no" \
   --tags=${NAME_PREFIX} \
   --scopes=cloud-platform \
   --metadata=enable-oslogin=TRUE \
