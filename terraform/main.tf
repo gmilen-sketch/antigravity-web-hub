@@ -26,6 +26,7 @@ locals {
     "cloudresourcemanager.googleapis.com",
     "serviceusage.googleapis.com"
   ]
+  disk_type = startswith(var.machine_type, "n4") ? "hyperdisk-balanced" : "pd-balanced"
 }
 
 resource "google_project_service" "services" {
@@ -102,7 +103,7 @@ resource "google_compute_firewall" "allow_lb_hc" {
 # ------------------------------------------------------------------------------
 resource "google_compute_disk" "data_disk" {
   name = "${var.instance_name}-data"
-  type = "pd-balanced"
+  type = local.disk_type
   zone = var.zone
   size = var.data_disk_size_gb
 
@@ -120,7 +121,7 @@ resource "google_compute_instance" "hub_vm" {
     initialize_params {
       image = "debian-cloud/debian-12"
       size  = 20
-      type  = "pd-balanced"
+      type  = local.disk_type
     }
   }
 
