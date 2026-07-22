@@ -33,6 +33,12 @@ variable "data_disk_size_gb" {
   description = "Size of the attached data disk in GB."
 }
 
+variable "disk_type" {
+  type        = string
+  default     = "hyperdisk-balanced"
+  description = "Disk type for boot and data disks (hyperdisk-balanced for N4/C3/C4, or pd-balanced for E2/N2)."
+}
+
 variable "name_prefix" {
   type        = string
   default     = "antigravity-web"

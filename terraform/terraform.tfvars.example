@@ -2,7 +2,8 @@ project_id    = "your-argolis-project-id"
 region        = "us-central1"
 zone          = "us-central1-a"
 instance_name = "antigravity-web-hub"
-machine_type  = "e2-standard-2"
+machine_type  = "n4-standard-2"
+disk_type     = "hyperdisk-balanced"
 
 # Note for Argolis: Use your Argolis Admin Account (e.g., admin@<name>.altostrat.com or `gcloud config get-value account`).
 # Argolis enforces constraints/iam.allowedPolicyMemberDomains restricting IAP access to altostrat.com domain users.
