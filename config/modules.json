@@ -1,5 +1,5 @@
 {
-  "version": "1.0",
+  "version": "2.0",
   "modules": [
     {
       "id": "knowledge_graph",
@@ -14,9 +14,42 @@
       "env_flag": "ENABLE_KNOWLEDGE_GRAPH"
     },
     {
+      "id": "diagram_renderer",
+      "name": "Offline Diagram Compilation Engine",
+      "description": "Offline Mermaid CLI compilation engine turning text-based flowcharts and architecture DSLs into visual PNG/SVG image artifacts.",
+      "default": true,
+      "files": [
+        "src/diagram_renderer/render_mermaid.py",
+        "src/diagram_renderer/diagram_mcp_server.py"
+      ],
+      "env_flag": "ENABLE_DIAGRAM_RENDERER"
+    },
+    {
+      "id": "six_hats_evaluator",
+      "name": "Six Thinking Hats Architectural Risk Audit",
+      "description": "Dr. Edward de Bono's 360-degree multi-perspective cognitive reasoning framework (White, Yellow, Black, Red, Green, Blue hats) for pressure-testing system designs.",
+      "default": true,
+      "files": [
+        "src/six_hats_evaluator/six_hats.py",
+        "src/six_hats_evaluator/six_hats_mcp_server.py"
+      ],
+      "env_flag": "ENABLE_SIX_HATS"
+    },
+    {
+      "id": "playwright_scraper",
+      "name": "Open-Source Playwright Headless Web Scraper",
+      "description": "Headless browser DOM extraction engine converting public web pages to clean markdown without internal proxy dependencies.",
+      "default": true,
+      "files": [
+        "src/playwright_scraper/playwright_scraper.py",
+        "src/playwright_scraper/playwright_mcp_server.py"
+      ],
+      "env_flag": "ENABLE_PLAYWRIGHT"
+    },
+    {
       "id": "deep_research",
       "name": "On-Demand Deep Research FastMCP",
-      "description": "Multi-stage deep research engine using Gemini Vertex AI streaming endpoints for complex customer investigations.",
+      "description": "Multi-stage deep research engine using Gemini Vertex AI streaming endpoints for complex cloud investigations.",
       "default": true,
       "files": [
         "src/mcp_deep_research.py"
