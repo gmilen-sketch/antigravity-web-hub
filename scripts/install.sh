@@ -129,6 +129,17 @@ if [ -d "src/playwright_scraper" ]; then
   install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/playwright_scraper/playwright_mcp_server.py "$BIN_DIR/playwright_scraper/playwright_mcp_server.py"
 fi
 
+# Install Google Workspace MCP module
+if [ -d "src/mcp_google_workspace" ]; then
+  echo "Installing Google Workspace MCP module..."
+  mkdir -p "$BIN_DIR/mcp_google_workspace"
+  cp -r src/mcp_google_workspace/* "$BIN_DIR/mcp_google_workspace/"
+  chown -R "$RUN_USER:$RUN_USER" "$BIN_DIR/mcp_google_workspace"
+  if command -v npm >/dev/null 2>&1; then
+    (cd "$BIN_DIR/mcp_google_workspace" && sudo -u "$RUN_USER" npm install --silent || true)
+  fi
+fi
+
 # ---- 5a. Configure installed MCP servers in Antigravity configuration ----
 echo "Registering installed MCP servers in Antigravity configuration..."
 sudo -u "$RUN_USER" python3 -c "
