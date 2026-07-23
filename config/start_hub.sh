@@ -17,6 +17,8 @@ rm -f "$HOME"/.config/chrome-data/DevToolsActivePort.lock
 export HOME="${HOME}"
 export ANTIGRAVITY_EXECUTABLE_DATA_DIR="$HOME/.gemini/antigravity"
 export GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT}"
+CSRF_TOKEN="${CSRF_TOKEN:-antigravity_secret_csrf_token_12345}"
+export CSRF_TOKEN
 export ANTIGRAVITY_PROJECT_ID="${GOOGLE_CLOUD_PROJECT}"
 
 BIN_DIR="$HOME/.gemini/antigravity/bin"
