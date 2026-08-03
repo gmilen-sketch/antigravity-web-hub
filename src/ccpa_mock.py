@@ -58,13 +58,30 @@ def extract_cascade_id(body: bytes, is_json: bool) -> str:
             pass
     return cascade_id
 
-def get_adc_token() -> str:
-    """Fetches and caches fresh GCP OAuth access token via GCE metadata server or ADC."""
+def get_adc_token(force: bool = False) -> str:
+    """Fetches and caches fresh GCP OAuth access token via gcloud / ADC or GCE metadata server."""
     now = time.time()
-    if now < _token_cache["expires_at"]:
+    if not force and now < _token_cache["expires_at"] and _token_cache["token"]:
         return _token_cache["token"]
 
-    # 1. Prefer VM Compute Engine default service account token (has roles/aiplatform.user)
+    # 1. Primary: gcloud auth print-access-token / application-default (guarantees cloud-platform scope)
+    for cmd in [
+        ["gcloud", "auth", "print-access-token"],
+        ["gcloud", "auth", "application-default", "print-access-token"],
+    ]:
+        try:
+            env = dict(os.environ)
+            env["CLOUDSDK_CONTEXT_AWARE_ACCESS_DISABLE_ECP"] = "true"
+            token = subprocess.check_output(cmd, text=True, env=env, stderr=subprocess.DEVNULL).strip()
+            if token and not token.startswith("ERROR"):
+                _token_cache["token"] = token
+                _token_cache["expires_at"] = now + 3000
+                logging.info(f"Fetched fresh token via {' '.join(cmd)} for Vertex AI bridge.")
+                return token
+        except Exception as e:
+            logging.debug(f"Command {' '.join(cmd)} failed: {e}")
+
+    # 2. Fallback: GCE metadata server
     try:
         req = urllib.request.Request(
             "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
@@ -76,29 +93,13 @@ def get_adc_token() -> str:
             if token:
                 _token_cache["token"] = token
                 _token_cache["expires_at"] = now + 3000
-                logging.info("Fetched fresh GCE metadata service account token for Vertex AI bridge.")
+                logging.info("Fetched GCE metadata service account token for Vertex AI bridge.")
                 return token
     except Exception as ex:
         logging.warning(f"Could not fetch GCE metadata token: {ex}")
 
-    # 2. Fallback to gcloud auth application-default print-access-token
-    try:
-        env = dict(os.environ)
-        env["CLOUDSDK_CONTEXT_AWARE_ACCESS_DISABLE_ECP"] = "true"
-        token = subprocess.check_output(
-            ["gcloud", "auth", "application-default", "print-access-token"],
-            text=True,
-            env=env
-        ).strip()
-        if token:
-            _token_cache["token"] = token
-            _token_cache["expires_at"] = now + 3000
-            logging.info("Fetched fresh ADC token for Vertex AI bridge.")
-            return token
-    except Exception as e:
-        logging.error(f"Failed to fetch ADC token: {e}")
-
     return ""
+
 
 
 def read_request_body(handler) -> bytes:
@@ -152,7 +153,36 @@ DROPDOWN_MODELS = [
     ("Gemini 3.1 Pro",                343),
 ]
 
-
+GEMINI_SUPPORTED_MIME_TYPES = {
+    "image/png": True,
+    "image/jpeg": True,
+    "image/webp": True,
+    "image/heic": True,
+    "image/heif": True,
+    "image/gif": True,
+    "application/pdf": True,
+    "video/webm": True,
+    "video/mp4": True,
+    "text/plain": True,
+    "text/html": True,
+    "text/css": True,
+    "text/javascript": True,
+    "application/x-javascript": True,
+    "text/x-typescript": True,
+    "application/x-typescript": True,
+    "text/csv": True,
+    "text/markdown": True,
+    "text/x-python": True,
+    "text/x-python-script": True,
+    "application/x-python-code": True,
+    "application/json": True,
+    "application/x-ipynb+json": True,
+    "text/xml": True,
+    "application/rtf": True,
+    "text/rtf": True,
+    "video/audio/wav": True,
+    "audio/webm;codecs=opus": True,
+}
 
 def moa(val):
     return {"choice": {"case": "model", "value": val}}
@@ -164,7 +194,7 @@ def build_cascade_model_config_data():
                 "label": label,
                 "modelOrAlias": moa(val),
                 "disabled": False,
-                "supportedMimeTypes": {},
+                "supportedMimeTypes": GEMINI_SUPPORTED_MIME_TYPES,
                 "supportsThoughtCirculation": False,
                 "provider": "MODEL_PROVIDER_GOOGLE",
                 "isRecommended": (val == DEFAULT_MODEL_ENUM),
@@ -187,6 +217,7 @@ def build_cascade_model_config_data():
             "modelOrAlias": moa(DEFAULT_MODEL_ENUM),
         },
     }
+
 
 def _is_unset_enum(v):
     if v is None or v == 0 or v == "" or v == "MODEL_UNSPECIFIED":
@@ -540,19 +571,25 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                     resp = urllib.request.urlopen(req)
                     break
                 except urllib.error.HTTPError as he:
-                    if he.code in (429, 500, 502, 503, 504) and attempt < max_retries:
+                    if he.code in (401, 403, 429, 500, 502, 503, 504) and attempt < max_retries:
                         sleep_time = backoff_base * (2 ** (attempt - 1))
                         logging.warning(f"Vertex AI stream request returned HTTP {he.code}. Retrying in {sleep_time:.2f}s (attempt {attempt}/{max_retries})...")
                         time.sleep(sleep_time)
-                        token = get_adc_token()
+                        token = get_adc_token(force=True)
                     else:
+                        logging.error(f"Vertex AI stream HTTPError: {he.code} {he.reason}")
+                        try:
+                            err_body = he.read().decode('utf-8', errors='ignore')
+                            logging.error(f"Vertex AI error body: {err_body}")
+                        except Exception:
+                            pass
                         raise he
                 except Exception as ex:
                     if attempt < max_retries:
                         sleep_time = backoff_base * (2 ** (attempt - 1))
                         logging.warning(f"Vertex AI stream request encountered exception: {ex}. Retrying in {sleep_time:.2f}s (attempt {attempt}/{max_retries})...")
                         time.sleep(sleep_time)
-                        token = get_adc_token()
+                        token = get_adc_token(force=True)
                     else:
                         raise ex
 
@@ -612,6 +649,7 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(f"Vertex AI Proxy Error: {e}".encode("utf-8"))
                 return
+
 
         # Handle HasAuthToken Interception
         if "HasAuthToken" in self.path or "hasAuthToken" in self.path:
@@ -1008,25 +1046,30 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                     {
                         "name": "gemini-3.6-flash",
                         "displayName": "Gemini 3.6 Flash",
-                        "supportedFeatures": ["CHAT"]
+                        "supportedFeatures": ["CHAT", "IMAGE", "MULTIMODAL", "AGENT"],
+                        "supportedMimeTypes": GEMINI_SUPPORTED_MIME_TYPES
                     },
                     {
                         "name": "gemini-3.5-flash-lite",
                         "displayName": "Gemini 3.5 Flash Lite",
-                        "supportedFeatures": ["CHAT"]
+                        "supportedFeatures": ["CHAT", "IMAGE", "MULTIMODAL", "AGENT"],
+                        "supportedMimeTypes": GEMINI_SUPPORTED_MIME_TYPES
                     },
                     {
                         "name": "gemini-3.5-flash",
                         "displayName": "Gemini 3.5 Flash",
-                        "supportedFeatures": ["CHAT"]
+                        "supportedFeatures": ["CHAT", "IMAGE", "MULTIMODAL", "AGENT"],
+                        "supportedMimeTypes": GEMINI_SUPPORTED_MIME_TYPES
                     },
                     {
                         "name": "gemini-3.1-pro-preview",
                         "displayName": "Gemini 3.1 Pro",
-                        "supportedFeatures": ["CHAT"]
+                        "supportedFeatures": ["CHAT", "IMAGE", "MULTIMODAL", "AGENT"],
+                        "supportedMimeTypes": GEMINI_SUPPORTED_MIME_TYPES
                     }
                 ]
             }
+
             
         response_bytes = json.dumps(response_data).encode('utf-8')
         
