@@ -22,6 +22,11 @@ RUN_HOME=$(getent passwd "$RUN_USER" | cut -d: -f6)
 
 echo "Installing for user=$RUN_USER home=$RUN_HOME project=$GOOGLE_CLOUD_PROJECT"
 
+# Ensure project workspace directory exists with open permissions
+mkdir -p /mnt/data/projects
+chmod -R 777 /mnt/data
+chown -R "$RUN_USER:$RUN_USER" /mnt/data 2>/dev/null || true
+
 # ---- 1. Antigravity language_server binary ---------------------
 BIN_DIR="$RUN_HOME/.gemini/antigravity/bin"
 mkdir -p "$BIN_DIR"
