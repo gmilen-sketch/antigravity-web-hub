@@ -498,8 +498,83 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
         is_raw_proto = ctype in raw_proto_types and "json" not in ctype
         is_json = "json" in ctype
         
-        logging.info(f"Request Content-Type Raw: {ctype_raw!r}, Parsed: {ctype!r}, is_enveloped: {is_enveloped}, is_raw_proto: {is_raw_proto}, is_json: {is_json}")
-        
+        if "/a2a/app" in self.path or "/a2a" in self.path:
+            logging.info(f"--- A2A REQUEST RECEIVED ---")
+            try:
+                doc = json.loads(post_data.decode("utf-8")) if post_data else {}
+                logging.info(f"A2A Payload: {json.dumps(doc, indent=2)}")
+                req_id = doc.get("id", 1)
+                params = doc.get("params", {})
+                user_msg = ""
+                if isinstance(params, dict):
+                    msg_obj = params.get("message", {})
+                    if isinstance(msg_obj, dict):
+                        user_msg = msg_obj.get("text", "")
+                    elif isinstance(msg_obj, str):
+                        user_msg = msg_obj
+                    if not user_msg:
+                        user_msg = params.get("text", "")
+                
+                # Execute environment command based on user query
+                msg_lower = user_msg.lower()
+                if any(w in msg_lower for w in ["virtual machine", "vm", "instances", "compute"]):
+                    try:
+                        res = subprocess.check_output(
+                            ["gcloud", "compute", "instances", "list", "--project=firsttestproject-343414"],
+                            stderr=subprocess.STDOUT
+                        ).decode("utf-8")
+                        output_text = f"Here are the active virtual machines in project `firsttestproject-343414`:\n\n```text\n{res}\n```\n\nConnected to Antigravity Cloud Sandbox: https://antigravity.customertests.info/."
+                    except Exception as ex:
+                        output_text = f"Error executing gcloud compute instances list: {ex}"
+                elif any(w in msg_lower for w in ["dataset", "bigquery", "tables"]):
+                    try:
+                        res = subprocess.check_output(
+                            ["bq", "ls", "--project_id=firsttestproject-343414"],
+                            stderr=subprocess.STDOUT
+                        ).decode("utf-8")
+                        output_text = f"Here are the BigQuery datasets in `firsttestproject-343414`:\n\n```text\n{res}\n```"
+                    except Exception as ex:
+                        output_text = f"Error querying BigQuery: {ex}"
+                else:
+                    output_text = f"Antigravity Coding Agent received your request:\n> {user_msg}\n\nWorkspace active with Monaco editor and terminal at: https://antigravity.customertests.info/."
+                
+                resp_payload = {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "status": "COMPLETED",
+                        "message": {
+                            "role": "assistant",
+                            "parts": [
+                                {
+                                    "text": output_text
+                                }
+                            ]
+                        }
+                    }
+                }
+                resp_bytes = json.dumps(resp_payload).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(resp_bytes)))
+                self.end_headers()
+                self.wfile.write(resp_bytes)
+                return
+            except Exception as e:
+                logging.error(f"Error processing A2A request: {e}")
+                err_resp = {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "error": {"code": -32603, "message": str(e)}
+                }
+                err_bytes = json.dumps(err_resp).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(err_bytes)))
+                self.end_headers()
+                self.wfile.write(err_bytes)
+                return
+
         if "streamGenerateContent" in self.path:
             logging.info(f"--- STREAM GENERATE CONTENT INTERCEPTED ---")
             
