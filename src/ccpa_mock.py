@@ -581,6 +581,31 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(e.read())
         except Exception as e:
             logging.error(f"Error forwarding request to {url}: {e}")
+            if any(k in path for k in ("UpdateConversationAnnotations", "RecordError", "JetboxDeleteSummary", "JetboxWriteSummary", "RecordAnalyticsEvent")):
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", "2")
+                self.end_headers()
+                self.wfile.write(b"{}")
+                return
+            elif "SendUserCascadeMessage" in path:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", "2")
+                self.end_headers()
+                self.wfile.write(b"{}")
+                return
+            elif "StreamAgentStateUpdates" in path:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/grpc-web+json")
+                self.send_header("Transfer-Encoding", "chunked")
+                self.end_headers()
+                data_frame = b"\x00\x00\x00\x00\x02{}"
+                self.wfile.write(f"{len(data_frame):x}\r\n".encode('ascii'))
+                self.wfile.write(data_frame)
+                self.wfile.write(b"\r\n")
+                self.wfile.flush()
+                return
             self.send_response(502)
             self.end_headers()
             self.wfile.write(b"Gateway Error")
