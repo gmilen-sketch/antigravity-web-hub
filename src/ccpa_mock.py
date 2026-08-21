@@ -596,9 +596,8 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
             st["queues"].append(q)
         
         self.send_response(200)
-        ctype = "application/connect+json" if "connect" in self.headers.get("Content-Type", "") else "application/grpc-web+json"
+        ctype = "application/grpc-web+json" if "grpc" in self.headers.get("Content-Type", "") or "grpc" in self.headers.get("Accept", "") else "application/connect+json"
         self.send_header("Content-Type", ctype)
-        self.send_header("Transfer-Encoding", "chunked")
         self.send_header("Cache-Control", "no-cache")
         origin = self.headers.get("Origin", "*")
         self.send_header("Access-Control-Allow-Origin", origin)
@@ -627,21 +626,17 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
             }
             init_payload = json.dumps({"update": init_update}).encode("utf-8")
             init_frame = b"\x00" + len(init_payload).to_bytes(4, "big") + init_payload
-            self.wfile.write(f"{len(init_frame):x}\r\n".encode('ascii'))
             self.wfile.write(init_frame)
-            self.wfile.write(b"\r\n")
             self.wfile.flush()
 
-            # 2. Keep stream open and listen for updates or send heartbeats
+            # 2. Keep stream open and listen for updates
             while True:
                 try:
                     frame = q.get(timeout=15.0)
-                    self.wfile.write(f"{len(frame):x}\r\n".encode('ascii'))
                     self.wfile.write(frame)
-                    self.wfile.write(b"\r\n")
                     self.wfile.flush()
                 except queue.Empty:
-                    # Send periodic no-op heartbeat to prevent TCP timeout
+                    # Send periodic empty heartbeat frame to maintain TCP session if needed
                     pass
         except (BrokenPipeError, ConnectionResetError):
             logging.info(f"StreamAgentStateUpdates client disconnected for cascade {cascade_id}")
