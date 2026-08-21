@@ -169,11 +169,85 @@
         supportsThoughtCirculation: true
       }
     ],
+    clientModelSorts: [
+      {
+        name: 'Recommended',
+        groups: [
+          {
+            groupName: 'Recommended',
+            modelLabels: ['Gemini 3.7 Flash', 'Gemini 3.5 Pro', 'Gemini 3.5 Flash']
+          }
+        ]
+      },
+      {
+        name: 'All',
+        groups: [
+          {
+            groupName: 'All Models',
+            modelLabels: ['Gemini 3.7 Flash', 'Gemini 3.5 Pro', 'Gemini 3.5 Flash']
+          }
+        ]
+      }
+    ],
     defaultOverrideModelConfig: {
       label: 'Gemini 3.7 Flash',
       modelOrAlias: { choice: { case: 'alias', value: 'gemini-3.7-flash' } }
     }
   };
+
+  var defaultMcpStates = [
+    {
+      spec: {
+        serverName: 'knowledge_graph',
+        disabled: false,
+        disabledTools: []
+      },
+      status: 2,
+      tools: [
+        { name: 'query_knowledge_graph', description: 'Query knowledge graph entities and links' },
+        { name: 'add_memory_node', description: 'Add a durable memory node to long-term store' },
+        { name: 'update_memory_node', description: 'Update memory node in store' }
+      ]
+    },
+    {
+      spec: {
+        serverName: 'autonomy_engine',
+        disabled: false,
+        disabledTools: []
+      },
+      status: 2,
+      tools: [
+        { name: 'harvest_divergences', description: 'Harvest trajectory divergences and classify failure modes' },
+        { name: 'hydrate_subagent', description: 'Hydrate subagent with working context and actions' },
+        { name: 'replay_turn', description: 'Single turn execution replay' }
+      ]
+    },
+    {
+      spec: {
+        serverName: 'deep_research',
+        disabled: false,
+        disabledTools: []
+      },
+      status: 2,
+      tools: [
+        { name: 'start_deep_research', description: 'Start multi-stage deep research swarm' },
+        { name: 'get_deep_research_status', description: 'Get status and findings of deep research' }
+      ]
+    },
+    {
+      spec: {
+        serverName: 'google_workspace',
+        disabled: false,
+        disabledTools: []
+      },
+      status: 2,
+      tools: [
+        { name: 'list_drive_files', description: 'List files in Google Drive' },
+        { name: 'read_document', description: 'Read content of Google Docs' },
+        { name: 'get_calendar_events', description: 'Get Google Calendar agenda' }
+      ]
+    }
+  ];
 
   if (!window._origNativeFetch) {
     window._origNativeFetch = window.fetch;
@@ -197,6 +271,82 @@
       }
       if (url.indexOf('ProjectUpdatesStream') !== -1 || url.indexOf('projectUpdatesStream') !== -1) {
         return makeStreamWithInitialMessage({ updates: [] });
+      }
+      if (url.indexOf('GetTokenBase') !== -1 || url.indexOf('getTokenBase') !== -1) {
+        return makeGrpcWeb({
+          customizationTokenBase: {
+            totalTokens: 1240,
+            systemPromptTokens: 800,
+            skillsTokens: 240,
+            mcpToolsTokens: 200
+          },
+          customizationBudget: 32000,
+          remainingBudget: 30760
+        });
+      }
+      if (url.indexOf('GetMcpServerStates') !== -1 || url.indexOf('getMcpServerStates') !== -1) {
+        return makeGrpcWeb({ states: defaultMcpStates });
+      }
+      if (url.indexOf('RefreshMcpServers') !== -1 || url.indexOf('refreshMcpServers') !== -1) {
+        return makeGrpcWeb({ states: defaultMcpStates });
+      }
+      if (url.indexOf('ListCustomizationPathsByFile') !== -1 || url.indexOf('listCustomizationPathsByFile') !== -1) {
+        return makeGrpcWeb({ paths: [] });
+      }
+      if (url.indexOf('GetSkillsPaths') !== -1 || url.indexOf('getSkillsPaths') !== -1) {
+        return makeGrpcWeb({ paths: [] });
+      }
+      if (url.indexOf('GetUserSettings') !== -1 || url.indexOf('getUserSettings') !== -1) {
+        return makeGrpcWeb({ settings: {} });
+      }
+      if (url.indexOf('GetAllWorkflows') !== -1 || url.indexOf('getAllWorkflows') !== -1) {
+        return makeGrpcWeb({ workflows: [] });
+      }
+      if (url.indexOf('GetStandaloneDir') !== -1 || url.indexOf('getStandaloneDir') !== -1) {
+        return makeGrpcWeb({ dir: '/home/admin_mgenchev_altostrat_com' });
+      }
+      if (url.indexOf('ListMcpPrompts') !== -1 || url.indexOf('listMcpPrompts') !== -1) {
+        return makeGrpcWeb({ prompts: [] });
+      }
+      if (url.indexOf('FetchUserInfo') !== -1 || url.indexOf('fetchUserInfo') !== -1) {
+        return makeGrpcWeb({ username: 'admin_mgenchev_altostrat_com', userEmail: 'admin@mgenchev.altostrat.com' });
+      }
+      if (url.indexOf('GetAvailableCascadePlugins') !== -1 || url.indexOf('getAvailableCascadePlugins') !== -1) {
+        return makeGrpcWeb({ plugins: [] });
+      }
+      if (url.indexOf('GetAllPlugins') !== -1 || url.indexOf('getAllPlugins') !== -1) {
+        return makeGrpcWeb({ plugins: [] });
+      }
+      if (url.indexOf('GetBuildWithGooglePlugins') !== -1 || url.indexOf('getBuildWithGooglePlugins') !== -1) {
+        return makeGrpcWeb({ plugins: [] });
+      }
+      if (url.indexOf('GetAllCustomAgentConfigs') !== -1 || url.indexOf('getAllCustomAgentConfigs') !== -1) {
+        return makeGrpcWeb({ configs: [] });
+      }
+      if (url.indexOf('GetAgentScripts') !== -1 || url.indexOf('getAgentScripts') !== -1) {
+        return makeGrpcWeb({ scripts: [] });
+      }
+      if (url.indexOf('GetAllSkills') !== -1 || url.indexOf('getAllSkills') !== -1) {
+        return makeGrpcWeb({
+          skills: [
+            { id: 'access-manager', name: 'access-manager', description: 'Audits and verifies workstation credentials, MDB group memberships, SSO session cookies, and binary dependencies.' },
+            { id: 'account-discovery', name: 'account-discovery', description: 'Operational revenue intelligence and account discovery skill for Google Cloud Customer Engineers.' },
+            { id: 'deep-research-owl', name: 'deep-research-owl', description: '6-stage Owl Swarm deep research engine across Google3, F1 DBs, Moma, Google Docs, and Buganizer.' },
+            { id: 'portfolio-task-manager', name: 'portfolio-task-manager', description: 'Master skill for Gmail/GChat sweeping, meeting notes scanning, and GTasks bidirectional sync.' }
+          ]
+        });
+      }
+      if (url.indexOf('GetAllRules') !== -1 || url.indexOf('getAllRules') !== -1) {
+        return makeGrpcWeb({ memories: [] });
+      }
+      if (url.indexOf('GetSlashCommands') !== -1 || url.indexOf('getSlashCommands') !== -1) {
+        return makeGrpcWeb({
+          commands: [
+            { command: '/goal', description: 'Run long-running autonomous task' },
+            { command: '/deepagent', description: 'Trigger deep multi-perspective agent execution' },
+            { command: '/schedule', description: 'Schedule recurring background execution' }
+          ]
+        });
       }
       if (url.indexOf('HasAuthToken') !== -1 || url.indexOf('hasAuthToken') !== -1) {
         return makeGrpcWeb({ hasToken: true, hasAuthToken: true, isGcpTos: false });
@@ -250,15 +400,6 @@
       }
       if (url.indexOf('RecordAnalyticsEvent') !== -1 || url.indexOf('recordAnalyticsEvent') !== -1) {
         return makeGrpcWeb({});
-      }
-      if (url.indexOf('GetAllSkills') !== -1 || url.indexOf('getAllSkills') !== -1) {
-        return makeGrpcWeb({ skills: [] });
-      }
-      if (url.indexOf('GetSlashCommands') !== -1 || url.indexOf('getSlashCommands') !== -1) {
-        return makeGrpcWeb({ commands: [] });
-      }
-      if (url.indexOf('GetMcpServerStates') !== -1 || url.indexOf('getMcpServerStates') !== -1) {
-        return makeGrpcWeb({ servers: [] });
       }
 
       return window._origNativeFetch.apply(this, args);
