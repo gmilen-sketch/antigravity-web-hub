@@ -177,8 +177,10 @@ if [ -f "config/jetski_state.pbtxt" ]; then
   chown "$RUN_USER:$RUN_USER" "$RUN_HOME/.gemini/antigravity/jetski_state.pbtxt" "$BIN_DIR/jetski_state.pbtxt"
 fi
 
-# ---- 7. Configure Nginx Reverse Proxy ----
+# ---- 7. Configure Nginx Reverse Proxy & Bootstrap Bridge ----
 if command -v nginx >/dev/null 2>&1; then
+  mkdir -p /var/www/html
+  install -m 0644 src/bootstrap.js /var/www/html/bootstrap.js
   install -m 0644 config/nginx.conf /etc/nginx/sites-available/default
   nginx -t && systemctl reload nginx || systemctl restart nginx
 fi
