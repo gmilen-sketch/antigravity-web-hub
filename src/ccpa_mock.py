@@ -992,6 +992,8 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                         }
                     }
                 else:
+                    doc.pop("code", None)
+                    doc.pop("message", None)
                     us_obj = doc.setdefault("userStatus", {})
                     if isinstance(us_obj, dict):
                         us_obj["cascadeModelConfigData"] = build_cascade_model_config_data()
