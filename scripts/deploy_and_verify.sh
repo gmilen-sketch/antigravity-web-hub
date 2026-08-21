@@ -1,64 +1,79 @@
 #!/bin/bash
+# ==============================================================================
+# Antigravity Web Hub - Clean-Room Destroy, Deploy & E2E Verification Pipeline
+# ==============================================================================
 set -euo pipefail
 
-PROJECT_ID="second-test-project-393510"
-ZONE="us-central1-c"
-VM_NAME="antigravity-ge-hub"
-SSH_USER="admin@mgenchev.altostrat.com"
-LB_IP="34.107.158.143"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+PROJECT_ID="${GOOGLE_CLOUD_PROJECT:-second-test-project-393510}"
+ZONE="${VM_ZONE:-us-central1-c}"
+VM_NAME="${VM_NAME:-antigravity-ge-hub}"
+SSH_USER="${SSH_USER:-admin@mgenchev.altostrat.com}"
+LB_IP="${LB_IP:-34.107.158.143}"
 
 echo "============================================================"
-echo "🚀 [Antigravity Hub] Single-Command Destroy, Deploy & Verify"
+echo "🚀 [Antigravity Hub] Standalone Clean-Room Deploy & Verify"
+echo "Target Project: ${PROJECT_ID} | VM: ${VM_NAME} (${ZONE})"
 echo "============================================================"
 
-# Step 1: SCP setup script and execute remotely
-echo "📦 [1/3] Uploading and Executing Clean-Room Destroy & Re-deploy on ${VM_NAME}..."
+# Step 1: Package clean repository
+TAR_ARCHIVE="/tmp/antigravity-hub-deploy.tar.gz"
+echo "📦 [1/4] Packaging clean repository into ${TAR_ARCHIVE}..."
+rm -f "${TAR_ARCHIVE}"
+tar --exclude='.git' --exclude='venv' --exclude='node_modules' -czf "${TAR_ARCHIVE}" -C "${REPO_ROOT}" .
 
-gcloud compute scp /tmp/antigravity_enhancements.tar.gz "${VM_NAME}:/tmp/antigravity_enhancements.tar.gz" \
+# Step 2: Transfer package and run clean-room destroy & installer
+echo "🚚 [2/4] Uploading deployment package to ${VM_NAME}..."
+gcloud compute scp "${TAR_ARCHIVE}" "${VM_NAME}:/tmp/hub.tar.gz" \
   --zone="${ZONE}" \
   --project="${PROJECT_ID}" \
   --account="${SSH_USER}" \
   --tunnel-through-iap \
   --scp-flag="-o StrictHostKeyChecking=no"
 
-gcloud compute scp /tmp/ccpa_mock_second_project.py "${VM_NAME}:/tmp/ccpa_mock_second_project.py" \
-  --zone="${ZONE}" \
-  --project="${PROJECT_ID}" \
-  --account="${SSH_USER}" \
-  --tunnel-through-iap \
-  --scp-flag="-o StrictHostKeyChecking=no"
-
-gcloud compute scp /tmp/remote_setup.sh "${VM_NAME}:/tmp/remote_setup.sh" \
-  --zone="${ZONE}" \
-  --project="${PROJECT_ID}" \
-  --account="${SSH_USER}" \
-  --tunnel-through-iap \
-  --scp-flag="-o StrictHostKeyChecking=no"
-
+echo "⚙️  [3/4] Executing remote clean-room destroy & installation on ${VM_NAME}..."
 gcloud compute ssh "${VM_NAME}" \
   --zone="${ZONE}" \
   --project="${PROJECT_ID}" \
   --account="${SSH_USER}" \
   --tunnel-through-iap \
   --ssh-flag="-o StrictHostKeyChecking=no" \
-  --command="bash /tmp/remote_setup.sh"
+  --command='
+set -euo pipefail
+echo "==> 1. Stopping and killing any existing services..."
+sudo systemctl stop antigravity-web.service 2>/dev/null || true
+pkill -9 -f "language_server" 2>/dev/null || true
+pkill -9 -f "ccpa_mock.py" 2>/dev/null || true
+rm -rf /tmp/ls-chrome-data /tmp/antigravity-web-hub
 
-echo "✅ [2/3] Backend Service and Nginx Proxy Successfully Re-deployed & Active."
+echo "==> 2. Unpacking clean deployment archive..."
+mkdir -p /tmp/antigravity-web-hub
+tar -xzf /tmp/hub.tar.gz -C /tmp/antigravity-web-hub
 
-# Step 2: Automated End-to-End Verification via Headless Chrome CDP
-echo "🧪 [3/3] Waiting for Load Balancer Health Check & Running E2E Verification..."
+echo "==> 3. Running scripts/install.sh with sudo -E..."
+cd /tmp/antigravity-web-hub
+sudo -E bash scripts/install.sh
+'
+
+echo "✅ Remote deployment completed successfully."
+
+# Step 3: Automated End-to-End Verification via Headless Chrome CDP
+echo "🧪 [4/4] Polling Load Balancer Health Check & Running E2E Automated Verification..."
 
 # Wait for LB health check to confirm 200 OK
-for i in {1..12}; do
+for i in {1..15}; do
   status_code=$(curl -s -o /dev/null -w "%{http_code}" "http://${LB_IP}/" || echo "000")
   if [ "$status_code" = "200" ]; then
     echo "Load Balancer is healthy (HTTP 200 OK after ${i} checks)."
     break
   fi
-  echo "Waiting for Load Balancer health check convergence (status: ${status_code}, attempt ${i}/12)..."
+  echo "Waiting for Load Balancer health check convergence (status: ${status_code}, attempt ${i}/15)..."
   sleep 2
 done
 
+# Run Node.js CDP verification
 node -e "
 const WebSocket = require('/tmp/ws_test/node_modules/ws');
 const http = require('http');
@@ -94,9 +109,6 @@ async function verify() {
   const pending = new Map();
   ws.on('message', (data) => {
     const msg = JSON.parse(data.toString());
-    if (msg.method === 'Runtime.consoleAPICalled') {
-      console.log('[CONSOLE]:', msg.params.type, msg.params.args.map(a => a.value || a.description).join(' '));
-    }
     if (msg.id && pending.has(msg.id)) {
       const { resolve, reject } = pending.get(msg.id);
       pending.delete(msg.id);
@@ -176,8 +188,9 @@ async function verify() {
   console.log('------------------------------------------------------------');
 
   const screenshot = await send('Page.captureScreenshot', { format: 'png' });
-  fs.writeFileSync('/usr/local/google/home/mgenchev/.gemini/jetski/brain/dc82200c-f596-42b7-8ba0-0e25321e9cd2/antigravity_e2e_verified.png', Buffer.from(screenshot.data, 'base64'));
-  console.log('🎉 [PASS] E2E Verification Complete! Screenshot saved to antigravity_e2e_verified.png');
+  const scPath = '/usr/local/google/home/mgenchev/.gemini/jetski/brain/dc82200c-f596-42b7-8ba0-0e25321e9cd2/antigravity_e2e_verified.png';
+  fs.writeFileSync(scPath, Buffer.from(screenshot.data, 'base64'));
+  console.log('🎉 [PASS] E2E Verification Complete! Screenshot saved.');
   console.log('============================================================');
   console.log('🎉 DEPLOYMENT & VERIFICATION PIPELINE COMPLETE: 100% SUCCESS');
   console.log('============================================================');
