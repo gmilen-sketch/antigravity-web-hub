@@ -24,6 +24,72 @@
   };
 
   var listeners = new Set();
+  var currentSelectedModel = parseInt(localStorage.getItem('antigravity_selected_model') || '352', 10);
+
+  var revMap = {
+    352: 'Gemini 3.7 Flash',
+    350: 'Gemini 3.6 Flash',
+    330: 'Gemini 3.5 Flash Lite',
+    333: 'Claude 3.7 Sonnet (Vertex AI)',
+    290: 'Claude Opus 5 (Vertex AI)'
+  };
+
+  var modelMap = {
+    'Claude 3.7 Sonnet': { name: 'Claude 3.7 Sonnet (Vertex AI)', enumVal: 333 },
+    'Claude Opus 5': { name: 'Claude Opus 5 (Vertex AI)', enumVal: 290 },
+    'Gemini 3.6 Flash': { name: 'Gemini 3.6 Flash', enumVal: 350 },
+    'Gemini 3.5 Flash Lite': { name: 'Gemini 3.5 Flash Lite', enumVal: 330 },
+    'Gemini 3.7 Flash': { name: 'Gemini 3.7 Flash', enumVal: 352 }
+  };
+
+  function updateModelButtonText(modelName) {
+    var btns = Array.from(document.querySelectorAll('button'));
+    var mainBtn = btns.find(function(b) {
+      var t = b.innerText || '';
+      return (t.indexOf('Gemini') !== -1 || t.indexOf('Claude') !== -1) && t.indexOf('\n') === -1;
+    });
+    if (mainBtn) {
+      var span = mainBtn.querySelector('span');
+      if (span && span.innerText !== modelName) {
+        span.innerText = modelName;
+      } else if (!span && mainBtn.innerText !== modelName) {
+        mainBtn.innerText = modelName;
+      }
+      mainBtn.setAttribute('aria-label', 'Select model, current: ' + modelName);
+    }
+  }
+
+  document.addEventListener('click', function(e) {
+    var target = e.target;
+    while (target && target !== document.body) {
+      if (target.tagName === 'BUTTON' || target.getAttribute('role') === 'button') {
+        var text = target.innerText || '';
+        var aria = target.getAttribute('aria-label') || '';
+        if (aria.indexOf('Select model, current') === -1) {
+          for (var key in modelMap) {
+            if (text.indexOf(key) !== -1) {
+              var matched = modelMap[key];
+              currentSelectedModel = matched.enumVal;
+              try { localStorage.setItem('antigravity_selected_model', String(matched.enumVal)); } catch (err) {}
+              console.log('[Bootstrap] User selected model:', matched.name, matched.enumVal);
+              updateModelButtonText(matched.name);
+              setTimeout(function() { updateModelButtonText(matched.name); }, 50);
+              setTimeout(function() { updateModelButtonText(matched.name); }, 150);
+              setTimeout(function() { updateModelButtonText(matched.name); }, 400);
+              return;
+            }
+          }
+        }
+      }
+      target = target.parentElement;
+    }
+  }, true);
+
+  setInterval(function() {
+    var saved = parseInt(localStorage.getItem('antigravity_selected_model') || '352', 10);
+    var modelName = revMap[saved] || 'Gemini 3.7 Flash';
+    updateModelButtonText(modelName);
+  }, 250);
 
   window.nativeStorage = {
     getItems: async function(keys) {
@@ -140,7 +206,7 @@
     clientModelConfigs: [
       {
         label: 'Gemini 3.7 Flash',
-        modelOrAlias: { choice: { case: 'alias', value: 'gemini-3.7-flash' } },
+        modelOrAlias: { choice: { case: 'model', value: 352 } },
         disabled: false,
         supportedMimeTypes: {},
         quotaInfo: { remaining: 1000, total: 1000 },
@@ -150,7 +216,7 @@
       },
       {
         label: 'Gemini 3.6 Flash',
-        modelOrAlias: { choice: { case: 'alias', value: 'gemini-3.6-flash' } },
+        modelOrAlias: { choice: { case: 'model', value: 350 } },
         disabled: false,
         supportedMimeTypes: {},
         quotaInfo: { remaining: 1000, total: 1000 },
@@ -160,7 +226,7 @@
       },
       {
         label: 'Gemini 3.5 Flash Lite',
-        modelOrAlias: { choice: { case: 'alias', value: 'gemini-3.5-flash-lite' } },
+        modelOrAlias: { choice: { case: 'model', value: 330 } },
         disabled: false,
         supportedMimeTypes: {},
         quotaInfo: { remaining: 1000, total: 1000 },
@@ -170,7 +236,7 @@
       },
       {
         label: 'Claude 3.7 Sonnet (Vertex AI)',
-        modelOrAlias: { choice: { case: 'alias', value: 'claude-3-7-sonnet' } },
+        modelOrAlias: { choice: { case: 'model', value: 333 } },
         disabled: false,
         supportedMimeTypes: {},
         quotaInfo: { remaining: 1000, total: 1000 },
@@ -180,7 +246,7 @@
       },
       {
         label: 'Claude Opus 5 (Vertex AI)',
-        modelOrAlias: { choice: { case: 'alias', value: 'claude-opus-5' } },
+        modelOrAlias: { choice: { case: 'model', value: 290 } },
         disabled: false,
         supportedMimeTypes: {},
         quotaInfo: { remaining: 1000, total: 1000 },
@@ -220,11 +286,7 @@
           }
         ]
       }
-    ],
-    defaultOverrideModelConfig: {
-      label: 'Gemini 3.7 Flash',
-      modelOrAlias: { choice: { case: 'alias', value: 'gemini-3.7-flash' } }
-    }
+    ]
   };
 
   var defaultMcpStates = [
@@ -287,13 +349,35 @@
       var args = Array.prototype.slice.call(arguments);
       var url = (typeof args[0] === 'string') ? args[0] : (args[0] && args[0].url) ? args[0].url : '';
       
+      if (url.indexOf('JetboxWriteState') !== -1 || url.indexOf('jetboxWriteState') !== -1) {
+        try {
+          var body = args[1] && args[1].body;
+          if (body) {
+            var rawText = (typeof body === 'string') ? body : (body instanceof Uint8Array) ? new TextDecoder().decode(body) : '';
+            if (rawText) {
+              var jsonMatch = rawText.match(/\{.*\}/);
+              if (jsonMatch) {
+                var parsed = JSON.parse(jsonMatch[0]);
+                if (parsed.appState && parsed.appState.lastSelectedAgentModel !== undefined) {
+                  currentSelectedModel = parsed.appState.lastSelectedAgentModel;
+                  try { localStorage.setItem('antigravity_selected_model', String(currentSelectedModel)); } catch (e) {}
+                  console.log('[Bootstrap] Persisted lastSelectedAgentModel:', currentSelectedModel);
+                }
+              }
+            }
+          }
+        } catch (e) {}
+        return makeGrpcWeb({});
+      }
+
       if (url.indexOf('JetboxSubscribeToState') !== -1 || url.indexOf('jetboxSubscribeToState') !== -1) {
+        var savedModel = parseInt(localStorage.getItem('antigravity_selected_model') || String(currentSelectedModel), 10);
         return makeStreamWithInitialMessage({
           appState: {
             agentOnboardingCompleted: 2,
             postOnboarding: { completedSteps: [] },
             seenNuxs: { uids: [] },
-            lastSelectedAgentModel: 0
+            lastSelectedAgentModel: savedModel
           },
           userConfig: {}
         });
@@ -428,7 +512,7 @@
         });
       }
       if (url.indexOf('GetAllCascadeTrajectories') !== -1 || url.indexOf('getAllCascadeTrajectories') !== -1) {
-        return makeGrpcWeb({ trajectories: [] });
+        return makeStreamWithInitialMessage({ trajectories: [] });
       }
       if (url.indexOf('RecordAnalyticsEvent') !== -1 || url.indexOf('recordAnalyticsEvent') !== -1) {
         return makeGrpcWeb({});
