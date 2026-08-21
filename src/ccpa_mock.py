@@ -684,7 +684,7 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
             logging.info(f"--- STREAM GENERATE CONTENT INTERCEPTED ---")
             
             token = get_adc_token()
-            if not token:
+            if not token and not os.environ.get("ANTHROPIC_API_KEY"):
                 self.send_response(500)
                 self.end_headers()
                 self.wfile.write(b"No ADC Token Available")
@@ -692,6 +692,8 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
 
             payload_bytes = post_data
             is_anthropic = False
+            model = "gemini-3.7-flash"
+            doc = {}
             try:
                 doc = json.loads(post_data.decode("utf-8"))
                 logging.info(f"Payload: {json.dumps(doc, indent=2)}")
@@ -704,7 +706,6 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                     model = active_ui_model
                     logging.info(f"Using model selected from active UI: {model}")
                 else:
-                    model = "gemini-3.7-flash"
                     req_model = doc.get("model") or doc.get("modelName") or doc.get("model_name")
                     if req_model:
                         model = map_model_name(req_model)
@@ -741,6 +742,10 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                     if system_prompt:
                         anthropic_payload["system"] = system_prompt
                         
+                    anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+                    if anthropic_api_key:
+                        anthropic_payload["model"] = model.split("@")[0].replace("claude-opus-5", "claude-3-opus-20240229").replace("claude-3-opus", "claude-3-opus-20240229").replace("claude-3-7-sonnet", "claude-3-7-sonnet-20250219")
+                        
                     payload_bytes = json.dumps(anthropic_payload).encode("utf-8")
                     logging.info(f"Forwarding Anthropic Messages payload for model: {model}")
                 else:
@@ -770,16 +775,33 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
             except Exception as e:
                 logging.error(f"Failed to parse and clean streamGenerateContent payload: {e}")
 
-            if is_anthropic:
-                anthropic_location = "global"
-                vertex_url = f"https://aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/global/publishers/anthropic/models/{model}:streamRawPredict"
+            anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+            if is_anthropic and anthropic_api_key:
+                vertex_url = "https://api.anthropic.com/v1/messages"
+                req_headers = {
+                    "x-api-key": anthropic_api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json"
+                }
+            elif is_anthropic:
+                anthropic_location = os.environ.get("MCP_VERTEX_REGION", "us-east5")
+                if anthropic_location == "global":
+                    anthropic_location = "us-east5"
+                vertex_url = f"https://{anthropic_location}-aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/{anthropic_location}/publishers/anthropic/models/{model}:streamRawPredict"
+                req_headers = {
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                }
             else:
-                # Use v1beta1 REST endpoint with 'global' location as verified working
                 vertex_url = f"https://aiplatform.googleapis.com/v1beta1/projects/{PROJECT_ID}/locations/global/publishers/google/models/{model}:streamGenerateContent?alt=sse"
+                req_headers = {
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                }
                 
-            logging.info(f"Forwarding stream to Vertex AI: {vertex_url}")
+            logging.info(f"Forwarding stream to model endpoint: {vertex_url}")
             
-            max_retries = 5
+            max_retries = 3
             backoff_base = 1.0
             attempt = 0
             resp = None
@@ -790,34 +812,49 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                     req = urllib.request.Request(
                         vertex_url,
                         data=payload_bytes,
-                        headers={
-                            "Authorization": f"Bearer {token}",
-                            "Content-Type": "application/json",
-                        },
+                        headers=req_headers,
                         method="POST",
                     )
-                    resp = urllib.request.urlopen(req)
+                    resp = urllib.request.urlopen(req, timeout=120)
                     break
                 except urllib.error.HTTPError as he:
-                    if he.code in (401, 403, 429, 500, 502, 503, 504) and attempt < max_retries:
+                    if he.code in (404, 403) and is_anthropic:
+                        logging.warning(f"Anthropic model {model} not enabled or unavailable on Vertex AI (HTTP {he.code}). Seamlessly falling back to gemini-3.7-flash...")
+                        is_anthropic = False
+                        fallback_model = "gemini-3.7-flash"
+                        vertex_url = f"https://aiplatform.googleapis.com/v1beta1/projects/{PROJECT_ID}/locations/global/publishers/google/models/{fallback_model}:streamGenerateContent?alt=sse"
+                        inner_gemini = doc.get("request", doc)
+                        allowed_keys = {"contents", "systemInstruction", "tools", "toolConfig", "generationConfig", "safetySettings"}
+                        cleaned_gemini = {k: v for k, v in inner_gemini.items() if k in allowed_keys}
+                        payload_bytes = json.dumps(cleaned_gemini).encode("utf-8")
+                        req_headers = {
+                            "Authorization": f"Bearer {token}",
+                            "Content-Type": "application/json",
+                        }
+                        req = urllib.request.Request(vertex_url, data=payload_bytes, headers=req_headers, method="POST")
+                        resp = urllib.request.urlopen(req, timeout=120)
+                        break
+                    elif he.code in (401, 429, 500, 502, 503, 504) and attempt < max_retries:
                         sleep_time = backoff_base * (2 ** (attempt - 1))
-                        logging.warning(f"Vertex AI stream request returned HTTP {he.code}. Retrying in {sleep_time:.2f}s (attempt {attempt}/{max_retries})...")
+                        logging.warning(f"Model stream request returned HTTP {he.code}. Retrying in {sleep_time:.2f}s (attempt {attempt}/{max_retries})...")
                         time.sleep(sleep_time)
                         token = get_adc_token(force=True)
+                        req_headers["Authorization"] = f"Bearer {token}"
                     else:
-                        logging.error(f"Vertex AI stream HTTPError: {he.code} {he.reason}")
+                        logging.error(f"Model stream HTTPError: {he.code} {he.reason}")
                         try:
                             err_body = he.read().decode('utf-8', errors='ignore')
-                            logging.error(f"Vertex AI error body: {err_body}")
+                            logging.error(f"Error body: {err_body}")
                         except Exception:
                             pass
                         raise he
                 except Exception as ex:
                     if attempt < max_retries:
                         sleep_time = backoff_base * (2 ** (attempt - 1))
-                        logging.warning(f"Vertex AI stream request encountered exception: {ex}. Retrying in {sleep_time:.2f}s (attempt {attempt}/{max_retries})...")
+                        logging.warning(f"Model stream request encountered exception: {ex}. Retrying in {sleep_time:.2f}s (attempt {attempt}/{max_retries})...")
                         time.sleep(sleep_time)
                         token = get_adc_token(force=True)
+                        req_headers["Authorization"] = f"Bearer {token}"
                     else:
                         raise ex
 
@@ -875,12 +912,12 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                                                 ]
                                             }
                                             wrapped = {"response": gemini_obj}
-                                            wrapped_bytes = f"data: {json.dumps(wrapped)}\n".encode("utf-8")
+                                            wrapped_bytes = f"data: {json.dumps(wrapped)}\n\n".encode("utf-8")
                                             write_chunk(wrapped_bytes)
                                     else:
                                         # Wrap standard Gemini payload under a top-level "response" object
                                         wrapped = {"response": obj}
-                                        wrapped_bytes = f"data: {json.dumps(wrapped)}\n".encode("utf-8")
+                                        wrapped_bytes = f"data: {json.dumps(wrapped)}\n\n".encode("utf-8")
                                         with open("/tmp/mocker_stream.log", "a") as f_log:
                                             f_log.write(f"WRAPPED: {json.dumps(wrapped)}\n")
                                         write_chunk(wrapped_bytes)
@@ -888,7 +925,6 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                                 logging.error(f"Failed to parse and wrap SSE chunk: {parse_err}. Original line: {line}")
                                 with open("/tmp/mocker_stream.log", "a") as f_log:
                                     f_log.write(f"PARSE_ERR: {parse_err}. Line: {line!r}\n")
-                                # Forward original line as fallback
                                 write_chunk(line)
                         else:
                             with open("/tmp/mocker_stream.log", "a") as f_log:

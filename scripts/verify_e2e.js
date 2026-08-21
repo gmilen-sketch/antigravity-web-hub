@@ -86,7 +86,7 @@ async function verify() {
   await send('Runtime.evaluate', {
     expression: `(() => {
       const btns = Array.from(document.querySelectorAll('button'));
-      const modelBtn = btns.find(b => b.innerText.includes('Gemini 3.7 Flash') || b.innerText.includes('Model'));
+      const modelBtn = btns.find(b => (b.innerText.includes('Gemini') || b.innerText.includes('Claude')) && !b.innerText.includes('\\n'));
       if (modelBtn) modelBtn.click();
     })()`
   });
@@ -111,6 +111,33 @@ async function verify() {
     chrome.kill();
     process.exit(1);
   }
+
+  // Verify Model Selection Switching
+  console.log('Verifying Model Switching: Selecting Claude 3.7 Sonnet...');
+  await send('Runtime.evaluate', {
+    expression: `(() => {
+      const btns = Array.from(document.querySelectorAll('button'));
+      const claude = btns.find(b => b.innerText.includes('Claude 3.7 Sonnet'));
+      if (claude) claude.click();
+    })()`
+  });
+  await new Promise(r => setTimeout(r, 1000));
+
+  const activeAfterClaude = await send('Runtime.evaluate', {
+    expression: `(() => {
+      const btn = Array.from(document.querySelectorAll('button')).find(b => (b.innerText.includes('Gemini') || b.innerText.includes('Claude')) && !b.innerText.includes('\\n'));
+      return btn ? btn.innerText.trim() : '';
+    })()`,
+    returnByValue: true
+  });
+  console.log('📊 [Active Model After Selecting Claude]:', activeAfterClaude.result.value);
+  if (!activeAfterClaude.result.value.includes('Claude 3.7 Sonnet')) {
+    console.error('❌ [FAIL] Model button failed to switch to Claude 3.7 Sonnet.');
+    ws.close();
+    chrome.kill();
+    process.exit(1);
+  }
+  console.log('🎉 [PASS] Model Selection switching to Claude 3.7 Sonnet verified!');
 
   console.log('Typing and submitting automated test prompt...');
   await send('Runtime.evaluate', {
