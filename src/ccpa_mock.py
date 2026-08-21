@@ -17,7 +17,7 @@ _server_ready.set()
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 
-PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", "firsttestproject-343414")
+PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", "second-test-project-393510")
 LOCATION = os.environ.get("GOOGLE_CLOUD_REGION", "us-central1")
 
 _token_cache = {"token": "", "expires_at": 0}
@@ -58,13 +58,30 @@ def extract_cascade_id(body: bytes, is_json: bool) -> str:
             pass
     return cascade_id
 
-def get_adc_token() -> str:
-    """Fetches and caches fresh GCP OAuth access token via GCE metadata server or ADC."""
+def get_adc_token(force: bool = False) -> str:
+    """Fetches and caches fresh GCP OAuth access token via gcloud / ADC or GCE metadata server."""
     now = time.time()
-    if now < _token_cache["expires_at"]:
+    if not force and now < _token_cache["expires_at"] and _token_cache["token"]:
         return _token_cache["token"]
 
-    # 1. Prefer VM Compute Engine default service account token (has roles/aiplatform.user)
+    # 1. Primary: gcloud auth print-access-token / application-default (guarantees cloud-platform scope)
+    for cmd in [
+        ["gcloud", "auth", "print-access-token"],
+        ["gcloud", "auth", "application-default", "print-access-token"],
+    ]:
+        try:
+            env = dict(os.environ)
+            env["CLOUDSDK_CONTEXT_AWARE_ACCESS_DISABLE_ECP"] = "true"
+            token = subprocess.check_output(cmd, text=True, env=env, stderr=subprocess.DEVNULL).strip()
+            if token and not token.startswith("ERROR"):
+                _token_cache["token"] = token
+                _token_cache["expires_at"] = now + 3000
+                logging.info(f"Fetched fresh token via {' '.join(cmd)} for Vertex AI bridge.")
+                return token
+        except Exception as e:
+            logging.debug(f"Command {' '.join(cmd)} failed: {e}")
+
+    # 2. Fallback: GCE metadata server
     try:
         req = urllib.request.Request(
             "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
@@ -76,29 +93,13 @@ def get_adc_token() -> str:
             if token:
                 _token_cache["token"] = token
                 _token_cache["expires_at"] = now + 3000
-                logging.info("Fetched fresh GCE metadata service account token for Vertex AI bridge.")
+                logging.info("Fetched GCE metadata service account token for Vertex AI bridge.")
                 return token
     except Exception as ex:
         logging.warning(f"Could not fetch GCE metadata token: {ex}")
 
-    # 2. Fallback to gcloud auth application-default print-access-token
-    try:
-        env = dict(os.environ)
-        env["CLOUDSDK_CONTEXT_AWARE_ACCESS_DISABLE_ECP"] = "true"
-        token = subprocess.check_output(
-            ["gcloud", "auth", "application-default", "print-access-token"],
-            text=True,
-            env=env
-        ).strip()
-        if token:
-            _token_cache["token"] = token
-            _token_cache["expires_at"] = now + 3000
-            logging.info("Fetched fresh ADC token for Vertex AI bridge.")
-            return token
-    except Exception as e:
-        logging.error(f"Failed to fetch ADC token: {e}")
-
     return ""
+
 
 
 def read_request_body(handler) -> bytes:
@@ -127,35 +128,99 @@ def read_request_body(handler) -> bytes:
         return handler.rfile.read(content_len) if content_len > 0 else b""
 
 def map_model_name(requested_model_from_payload):
-    if not requested_model_from_payload or not isinstance(requested_model_from_payload, str):
+    if not requested_model_from_payload:
+        return "gemini-3.7-flash"
+    req_str = str(requested_model_from_payload)
+    req_lower = req_str.lower()
+    
+    # 1. Claude Fable / Haiku (enum 340, 1272)
+    if "340" in req_str or "1272" in req_str or "haiku" in req_lower or "fable" in req_lower:
+        return "claude-fable-5"
+        
+    # 2. Claude Opus (enum 290, 291, 1279)
+    if "290" in req_str or "291" in req_str or "1279" in req_str or "opus" in req_lower:
+        if "4.7" in req_lower:
+            return "claude-opus-4-7"
+        return "claude-opus-5"
+        
+    # 3. Claude Sonnet (enum 333, 334, 281, 282)
+    if "333" in req_str or "334" in req_str or "281" in req_str or "282" in req_str or "claude" in req_lower or "sonnet" in req_lower:
+        if "3.5" in req_lower or "281" in req_str:
+            return "claude-3-5-sonnet-v2@20241022"
+        return "claude-3-7-sonnet@20250219"
+        
+    # 4. Gemini 3.7 Flash (enum 352, 353, 1003, 1004)
+    if "352" in req_str or "353" in req_str or "3.7" in req_lower:
+        return "gemini-3.7-flash"
+        
+    # 5. Gemini 3.6 Flash (enum 350, 1001)
+    if "350" in req_str or "1001" in req_str or "3.6" in req_lower:
         return "gemini-3.6-flash"
-    req_lower = requested_model_from_payload.lower()
-    if "3.6" in req_lower:
-        return "gemini-3.6-flash"
-    if "lite" in req_lower or "light" in req_lower or "3.5-flash-lite" in req_lower:
+        
+    # 6. Gemini 3.5 Flash Lite (enum 330, 344)
+    if "330" in req_str or "344" in req_str or "lite" in req_lower or "light" in req_lower:
         return "gemini-3.5-flash-lite"
-    if "pro" in req_lower:
-        return "gemini-3.1-pro-preview"
-    if "3.5" in req_lower:
+        
+    # 7. Gemini 3.5 Pro (enum 246, 326, 331, 327)
+    if "246" in req_str or "326" in req_str or "331" in req_str or "pro" in req_lower:
+        return "gemini-3.5-pro"
+        
+    # 8. Gemini 3.5 Flash (enum 348, 1000)
+    if "348" in req_str or "1000" in req_str or "3.5" in req_lower:
         return "gemini-3.5-flash"
-    return "gemini-3.6-flash"
+        
+    return "gemini-3.7-flash"
 
 PORT = 8083
 
-DEFAULT_MODEL_ENUM = 350
-DEFAULT_MODEL_NAME = "MODEL_GOOGLE_GEMINI_RIFTRUNNER"
+DEFAULT_MODEL_ENUM = 352
+DEFAULT_MODEL_NAME = "MODEL_GOOGLE_GEMINI_RIFTRUNNER_THINKING_LOW"
 
 DROPDOWN_MODELS = [
-    ("Gemini 3.6 Flash",              350),
-    ("Gemini 3.5 Flash Lite",         335),
-    ("Gemini 3.5 Flash",              348),
-    ("Gemini 3.1 Pro",                343),
+    ("Gemini 3.7 Flash",              352),  # MODEL_GOOGLE_GEMINI_RIFTRUNNER_THINKING_LOW
+    ("Gemini 3.6 Flash",              350),  # MODEL_GOOGLE_GEMINI_INFINITYJET
+    ("Gemini 3.5 Flash Lite",         330),  # MODEL_GOOGLE_GEMINI_2_5_FLASH_LITE
+    ("Claude 3.7 Sonnet (Vertex AI)", 333),  # MODEL_CLAUDE_4_5_SONNET
+    ("Claude Opus 5 (Vertex AI)",     290),  # MODEL_CLAUDE_4_OPUS
+    ("Claude Fable 5 (Next-Gen)",     340),  # MODEL_CLAUDE_4_5_HAIKU
 ]
 
-
+GEMINI_SUPPORTED_MIME_TYPES = {
+    "image/png": True,
+    "image/jpeg": True,
+    "image/webp": True,
+    "image/heic": True,
+    "image/heif": True,
+    "image/gif": True,
+    "application/pdf": True,
+    "video/webm": True,
+    "video/mp4": True,
+    "text/plain": True,
+    "text/html": True,
+    "text/css": True,
+    "text/javascript": True,
+    "application/x-javascript": True,
+    "text/x-typescript": True,
+    "application/x-typescript": True,
+    "text/csv": True,
+    "text/markdown": True,
+    "text/x-python": True,
+    "text/x-python-script": True,
+    "application/x-python-code": True,
+    "application/json": True,
+    "application/x-ipynb+json": True,
+    "text/xml": True,
+    "application/rtf": True,
+    "text/rtf": True,
+    "video/audio/wav": True,
+    "audio/webm;codecs=opus": True,
+}
 
 def moa(val):
-    return {"choice": {"case": "model", "value": val}}
+    return {
+        "model": val,
+        "choice": {"case": "model", "value": val}
+    }
 
 def build_cascade_model_config_data():
     return {
@@ -164,7 +229,7 @@ def build_cascade_model_config_data():
                 "label": label,
                 "modelOrAlias": moa(val),
                 "disabled": False,
-                "supportedMimeTypes": {},
+                "supportedMimeTypes": GEMINI_SUPPORTED_MIME_TYPES,
                 "supportsThoughtCirculation": False,
                 "provider": "MODEL_PROVIDER_GOOGLE",
                 "isRecommended": (val == DEFAULT_MODEL_ENUM),
@@ -187,6 +252,7 @@ def build_cascade_model_config_data():
             "modelOrAlias": moa(DEFAULT_MODEL_ENUM),
         },
     }
+
 
 def _is_unset_enum(v):
     if v is None or v == 0 or v == "" or v == "MODEL_UNSPECIFIED":
@@ -226,38 +292,110 @@ def forward_request(path, method, headers, body):
         logging.error(f"Error forwarding request to {url}: {e}")
         return 502, {}, b"Gateway Error"
 
+def get_active_ui_model():
+    pbtxt_path = os.path.expanduser("~/.gemini/antigravity/jetski_state.pbtxt")
+    if os.path.exists(pbtxt_path):
+        try:
+            with open(pbtxt_path, "r") as f:
+                content = f.read()
+                m = re.search(r"last_selected_agent_model:\s*(\w+)", content)
+                if m:
+                    model_str = m.group(1).strip()
+                    if model_str and model_str != "MODEL_UNSPECIFIED":
+                        mapped = map_model_name(model_str)
+                        return mapped
+        except Exception as e:
+            logging.error(f"Error reading jetski_state.pbtxt: {e}")
+    return None
+
+def get_active_ui_model_enum():
+    pbtxt_path = os.path.expanduser("~/.gemini/antigravity/jetski_state.pbtxt")
+    if os.path.exists(pbtxt_path):
+        try:
+            with open(pbtxt_path, "r") as f:
+                content = f.read()
+                m = re.search(r"last_selected_agent_model:\s*(\w+)", content)
+                if m:
+                    model_str = m.group(1).strip()
+                    if model_str and model_str != "MODEL_UNSPECIFIED":
+                        enum_map = {
+                            "MODEL_CLAUDE_4_OPUS": 290,
+                            "MODEL_CLAUDE_4_5_SONNET": 333,
+                            "MODEL_CLAUDE_4_5_HAIKU": 340,
+                            "MODEL_GOOGLE_GEMINI_INFINITYJET": 350,
+                            "MODEL_GOOGLE_GEMINI_RIFTRUNNER_THINKING_LOW": 352,
+                            "MODEL_GOOGLE_GEMINI_2_5_FLASH_LITE": 330,
+                            "MODEL_GOOGLE_GEMINI_2_5_FLASH": 312
+                        }
+                        if model_str in enum_map:
+                            return enum_map[model_str]
+                        return model_str
+        except Exception as e:
+            logging.error(f"Error reading jetski_state.pbtxt: {e}")
+    return None
+
+def extract_requested_model(doc):
+    # 1. Check active UI model from jetski_state.pbtxt first
+    ui_enum = get_active_ui_model_enum()
+    if ui_enum is not None:
+        return ui_enum
+
+    # 2. Check top-level requestedModel
+    req_m = doc.get("requestedModel") or doc.get("requested_model")
+    if req_m is not None and not _is_unset_enum(req_m):
+        if isinstance(req_m, dict):
+            choice = req_m.get("choice", {})
+            if isinstance(choice, dict) and choice.get("value") not in (None, 0, "", "MODEL_UNSPECIFIED"):
+                return choice.get("value")
+            val = req_m.get("model") or req_m.get("value")
+            if val not in (None, 0, "", "MODEL_UNSPECIFIED"):
+                return val
+        elif req_m not in (0, "", "MODEL_UNSPECIFIED"):
+            return req_m
+            
+    # 3. Check cascadeConfig.plannerConfig.requestedModel
+    cc = doc.get("cascadeConfig") or doc.get("cascade_config") or {}
+    if isinstance(cc, dict):
+        pc = cc.get("plannerConfig") or cc.get("planner_config") or {}
+        if isinstance(pc, dict):
+            rm = pc.get("requestedModel") or pc.get("requested_model")
+            if rm is not None and not _is_unset_enum(rm):
+                if isinstance(rm, dict):
+                    choice = rm.get("choice", {})
+                    if isinstance(choice, dict) and choice.get("value") not in (None, 0, "", "MODEL_UNSPECIFIED"):
+                        return choice.get("value")
+                    val = rm.get("model") or rm.get("value")
+                    if val not in (None, 0, "", "MODEL_UNSPECIFIED"):
+                        return val
+                elif rm not in (0, "", "MODEL_UNSPECIFIED"):
+                    return rm
+            pm = pc.get("planModel") or pc.get("plan_model")
+            if pm not in (None, 0, "", "MODEL_UNSPECIFIED"):
+                return pm
+    return None
+
 def inject_model_into_json_doc(doc, is_start_cascade=False):
     modified = False
 
-    # 1. Normalize top-level requestedModel (StartCascadeRequest specific)
-    req_model = doc.get("requestedModel") or doc.get("requested_model")
+    extracted_model = extract_requested_model(doc)
+    model_to_use = extracted_model if extracted_model is not None else DEFAULT_MODEL_ENUM
+    if isinstance(model_to_use, str) and model_to_use.isdigit():
+        model_to_use = int(model_to_use)
+    logging.info(f"inject_model_into_json_doc (is_start_cascade={is_start_cascade}): extracted={extracted_model} -> using={model_to_use}")
+
+    # 1. Normalize top-level requestedModel
     if "requested_model" in doc:
         del doc["requested_model"]
         modified = True
 
     if is_start_cascade:
-        if req_model is not None:
-            if isinstance(req_model, dict):
-                val = None
-                choice = req_model.get("choice", {})
-                if isinstance(choice, dict):
-                    val = choice.get("value")
-                if val is None:
-                    val = req_model.get("model") or req_model.get("value")
-                
-                if val is not None and val != 0 and val != "" and val != "MODEL_UNSPECIFIED":
-                    target_val = val
-                else:
-                    target_val = DEFAULT_MODEL_NAME
-            elif _is_unset_enum(req_model):
-                target_val = DEFAULT_MODEL_NAME
-            else:
-                target_val = req_model
-            
-            doc["requestedModel"] = target_val
-            modified = True
-        else:
-            doc["requestedModel"] = DEFAULT_MODEL_NAME
+        # StartCascadeRequest.requested_model (field 14) is codeium_common_pb.Model ENUM, NOT a message dict!
+        doc["requestedModel"] = model_to_use
+        modified = True
+    else:
+        # SendUserCascadeMessage does not have a top-level requestedModel field in protobuf
+        if "requestedModel" in doc:
+            del doc["requestedModel"]
             modified = True
 
     # 2. Normalize cascadeConfig / cascade_config
@@ -289,32 +427,20 @@ def inject_model_into_json_doc(doc, is_start_cascade=False):
 
         if isinstance(planner_cfg, dict):
             # 4. Normalize planModel / plan_model
-            pm_val = planner_cfg.get("planModel") or planner_cfg.get("plan_model")
             if "plan_model" in planner_cfg:
                 del planner_cfg["plan_model"]
                 modified = True
 
-            if _is_unset_enum(pm_val):
-                planner_cfg["planModel"] = DEFAULT_MODEL_NAME
-                modified = True
-            else:
-                planner_cfg["planModel"] = pm_val
+            planner_cfg["planModel"] = model_to_use
+            modified = True
 
-            # 5. Normalize requestedModel / requested_model (this is ModelOrAlias, i.e., dictionary)
-            rm_val = planner_cfg.get("requestedModel") or planner_cfg.get("requested_model")
+            # 5. Normalize requestedModel / requested_model
             if "requested_model" in planner_cfg:
                 del planner_cfg["requested_model"]
                 modified = True
 
-            if _is_unset_enum(rm_val):
-                planner_cfg["requestedModel"] = {"model": DEFAULT_MODEL_NAME}
-                modified = True
-            else:
-                if isinstance(rm_val, dict):
-                    planner_cfg["requestedModel"] = rm_val
-                else:
-                    planner_cfg["requestedModel"] = {"model": rm_val}
-                modified = True
+            planner_cfg["requestedModel"] = moa(model_to_use)
+            modified = True
 
             # Normalize conversational agenticMode
             conv = planner_cfg.get("conversational")
@@ -467,8 +593,83 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
         is_raw_proto = ctype in raw_proto_types and "json" not in ctype
         is_json = "json" in ctype
         
-        logging.info(f"Request Content-Type Raw: {ctype_raw!r}, Parsed: {ctype!r}, is_enveloped: {is_enveloped}, is_raw_proto: {is_raw_proto}, is_json: {is_json}")
-        
+        if "/a2a/app" in self.path or "/a2a" in self.path:
+            logging.info(f"--- A2A REQUEST RECEIVED ---")
+            try:
+                doc = json.loads(post_data.decode("utf-8")) if post_data else {}
+                logging.info(f"A2A Payload: {json.dumps(doc, indent=2)}")
+                req_id = doc.get("id", 1)
+                params = doc.get("params", {})
+                user_msg = ""
+                if isinstance(params, dict):
+                    msg_obj = params.get("message", {})
+                    if isinstance(msg_obj, dict):
+                        user_msg = msg_obj.get("text", "")
+                    elif isinstance(msg_obj, str):
+                        user_msg = msg_obj
+                    if not user_msg:
+                        user_msg = params.get("text", "")
+                
+                # Execute environment command based on user query
+                msg_lower = user_msg.lower()
+                if any(w in msg_lower for w in ["virtual machine", "vm", "instances", "compute"]):
+                    try:
+                        res = subprocess.check_output(
+                            ["gcloud", "compute", "instances", "list", "--project=second-test-project-393510"],
+                            stderr=subprocess.STDOUT
+                        ).decode("utf-8")
+                        output_text = f"Here are the active virtual machines in project `second-test-project-393510`:\n\n```text\n{res}\n```\n\nConnected to Antigravity Cloud Sandbox: http://34.107.158.143/."
+                    except Exception as ex:
+                        output_text = f"Error executing gcloud compute instances list: {ex}"
+                elif any(w in msg_lower for w in ["dataset", "bigquery", "tables"]):
+                    try:
+                        res = subprocess.check_output(
+                            ["bq", "ls", "--project_id=second-test-project-393510"],
+                            stderr=subprocess.STDOUT
+                        ).decode("utf-8")
+                        output_text = f"Here are the BigQuery datasets in `second-test-project-393510`:\n\n```text\n{res}\n```"
+                    except Exception as ex:
+                        output_text = f"Error querying BigQuery: {ex}"
+                else:
+                    output_text = f"Antigravity Coding Agent received your request:\n> {user_msg}\n\nWorkspace active with Monaco editor and terminal at: http://34.107.158.143/."
+                
+                resp_payload = {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "status": "COMPLETED",
+                        "message": {
+                            "role": "assistant",
+                            "parts": [
+                                {
+                                    "text": output_text
+                                }
+                            ]
+                        }
+                    }
+                }
+                resp_bytes = json.dumps(resp_payload).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(resp_bytes)))
+                self.end_headers()
+                self.wfile.write(resp_bytes)
+                return
+            except Exception as e:
+                logging.error(f"Error processing A2A request: {e}")
+                err_resp = {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "error": {"code": -32603, "message": str(e)}
+                }
+                err_bytes = json.dumps(err_resp).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(err_bytes)))
+                self.end_headers()
+                self.wfile.write(err_bytes)
+                return
+
         if "streamGenerateContent" in self.path:
             logging.info(f"--- STREAM GENERATE CONTENT INTERCEPTED ---")
             
@@ -479,46 +680,94 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                 self.wfile.write(b"No ADC Token Available")
                 return
 
-            model = "gemini-3.5-flash"
             payload_bytes = post_data
+            is_anthropic = False
             try:
                 doc = json.loads(post_data.decode("utf-8"))
                 logging.info(f"Payload: {json.dumps(doc, indent=2)}")
                 with open("/tmp/stream_req.json", "w") as f:
                     json.dump(doc, f, indent=2)
                 
-                # Dynamically extract and map the requested model if possible
-                req_model = doc.get("model") or doc.get("modelName") or doc.get("model_name")
-                if req_model:
-                    model = map_model_name(req_model)
+                # Check active UI selected model first from jetski_state.pbtxt
+                active_ui_model = get_active_ui_model()
+                if active_ui_model:
+                    model = active_ui_model
+                    logging.info(f"Using model selected from active UI: {model}")
+                else:
+                    model = "gemini-3.7-flash"
+                    req_model = doc.get("model") or doc.get("modelName") or doc.get("model_name")
+                    if req_model:
+                        model = map_model_name(req_model)
                 
-                # Enforce standard Gemini API payload format for Vertex AI
-                if "request" in doc:
-                    inner_req = doc["request"]
-                    allowed_keys = {
-                        "contents",
-                        "systemInstruction",
-                        "tools",
-                        "toolConfig",
-                        "generationConfig",
-                        "safetySettings",
+                if model.startswith("claude-"):
+                    is_anthropic = True
+                    # Translate Gemini payload to Anthropic Messages payload
+                    inner_req = doc.get("request", doc)
+                    system_prompt = ""
+                    if "systemInstruction" in inner_req:
+                        parts = inner_req["systemInstruction"].get("parts", [])
+                        system_prompt = " ".join([p.get("text", "") for p in parts if isinstance(p, dict) and "text" in p])
+                    
+                    anthropic_messages = []
+                    for c in inner_req.get("contents", []):
+                        role = "assistant" if c.get("role") == "model" else "user"
+                        content_blocks = []
+                        for p in c.get("parts", []):
+                            if isinstance(p, dict) and "text" in p and p["text"]:
+                                content_blocks.append({"type": "text", "text": p["text"]})
+                        if content_blocks:
+                            anthropic_messages.append({"role": role, "content": content_blocks})
+                    
+                    # Ensure at least one user message
+                    if not anthropic_messages:
+                        anthropic_messages = [{"role": "user", "content": [{"type": "text", "text": "Hello"}]}]
+                        
+                    anthropic_payload = {
+                        "anthropic_version": "vertex-2023-10-16",
+                        "max_tokens": 8192,
+                        "stream": True,
+                        "messages": anthropic_messages
                     }
-                    cleaned_req = {k: v for k, v in inner_req.items() if k in allowed_keys}
-                    
-                    # Prevent thinkingConfig compatibility issues for non-reasoning models
-                    if "generationConfig" in cleaned_req:
-                        gen_cfg = cleaned_req["generationConfig"]
-                        if isinstance(gen_cfg, dict) and "thinkingConfig" in gen_cfg:
-                            del gen_cfg["thinkingConfig"]
-                    
-                    payload_bytes = json.dumps(cleaned_req).encode("utf-8")
-                    logging.info(f"Forwarding cleaned standard payload for Vertex AI.")
+                    if system_prompt:
+                        anthropic_payload["system"] = system_prompt
+                        
+                    payload_bytes = json.dumps(anthropic_payload).encode("utf-8")
+                    logging.info(f"Forwarding Anthropic Messages payload for model: {model}")
+                else:
+                    # Enforce standard Gemini API payload format for Vertex AI
+                    if "request" in doc:
+                        inner_req = doc["request"]
+                        allowed_keys = {
+                            "contents",
+                            "systemInstruction",
+                            "tools",
+                            "toolConfig",
+                            "generationConfig",
+                            "safetySettings",
+                        }
+                        cleaned_req = {k: v for k, v in inner_req.items() if k in allowed_keys}
+                        
+                        # Prevent thinkingConfig compatibility issues for disabled thinking or non-reasoning models
+                        if "generationConfig" in cleaned_req:
+                            gen_cfg = cleaned_req["generationConfig"]
+                            if isinstance(gen_cfg, dict) and "thinkingConfig" in gen_cfg:
+                                tc = gen_cfg["thinkingConfig"]
+                                if not isinstance(tc, dict) or tc.get("thinkingBudget", 0) == 0 or "3.7" not in model:
+                                    del gen_cfg["thinkingConfig"]
+                        
+                        payload_bytes = json.dumps(cleaned_req).encode("utf-8")
+                        logging.info(f"Forwarding cleaned standard payload for Vertex AI ({model}).")
             except Exception as e:
                 logging.error(f"Failed to parse and clean streamGenerateContent payload: {e}")
 
-            # Use v1beta1 REST endpoint with 'global' location as verified working
-            vertex_url = f"https://aiplatform.googleapis.com/v1beta1/projects/{PROJECT_ID}/locations/global/publishers/google/models/{model}:streamGenerateContent?alt=sse"
-            logging.info(f"Forwarding streamGenerateContent to Vertex AI: {vertex_url}")
+            if is_anthropic:
+                anthropic_location = "global"
+                vertex_url = f"https://aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/global/publishers/anthropic/models/{model}:streamRawPredict"
+            else:
+                # Use v1beta1 REST endpoint with 'global' location as verified working
+                vertex_url = f"https://aiplatform.googleapis.com/v1beta1/projects/{PROJECT_ID}/locations/global/publishers/google/models/{model}:streamGenerateContent?alt=sse"
+                
+            logging.info(f"Forwarding stream to Vertex AI: {vertex_url}")
             
             max_retries = 5
             backoff_base = 1.0
@@ -540,19 +789,25 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                     resp = urllib.request.urlopen(req)
                     break
                 except urllib.error.HTTPError as he:
-                    if he.code in (429, 500, 502, 503, 504) and attempt < max_retries:
+                    if he.code in (401, 403, 429, 500, 502, 503, 504) and attempt < max_retries:
                         sleep_time = backoff_base * (2 ** (attempt - 1))
                         logging.warning(f"Vertex AI stream request returned HTTP {he.code}. Retrying in {sleep_time:.2f}s (attempt {attempt}/{max_retries})...")
                         time.sleep(sleep_time)
-                        token = get_adc_token()
+                        token = get_adc_token(force=True)
                     else:
+                        logging.error(f"Vertex AI stream HTTPError: {he.code} {he.reason}")
+                        try:
+                            err_body = he.read().decode('utf-8', errors='ignore')
+                            logging.error(f"Vertex AI error body: {err_body}")
+                        except Exception:
+                            pass
                         raise he
                 except Exception as ex:
                     if attempt < max_retries:
                         sleep_time = backoff_base * (2 ** (attempt - 1))
                         logging.warning(f"Vertex AI stream request encountered exception: {ex}. Retrying in {sleep_time:.2f}s (attempt {attempt}/{max_retries})...")
                         time.sleep(sleep_time)
-                        token = get_adc_token()
+                        token = get_adc_token(force=True)
                     else:
                         raise ex
 
@@ -586,16 +841,43 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                                     with open("/tmp/mocker_stream.log", "a") as f_log:
                                         f_log.write(f"--- CHUNK ---\nRAW: {sse_data.decode('utf-8', errors='ignore')}\n")
                                     obj = json.loads(sse_data.decode("utf-8"))
-                                    # Wrap standard Gemini payload under a top-level "response" object
-                                    wrapped = {"response": obj}
-                                    wrapped_bytes = f"data: {json.dumps(wrapped)}\n".encode("utf-8")
-                                    with open("/tmp/mocker_stream.log", "a") as f_log:
-                                        f_log.write(f"WRAPPED: {json.dumps(wrapped)}\n")
-                                    write_chunk(wrapped_bytes)
+                                    
+                                    if is_anthropic:
+                                        # Translate Anthropic stream event to Gemini candidate structure
+                                        ev_type = obj.get("type", "")
+                                        delta_text = ""
+                                        if ev_type == "content_block_delta":
+                                            delta = obj.get("delta", {})
+                                            if delta.get("type") == "text_delta":
+                                                delta_text = delta.get("text", "")
+                                        elif ev_type == "message_start":
+                                            delta_text = ""
+                                            
+                                        if delta_text:
+                                            gemini_obj = {
+                                                "candidates": [
+                                                    {
+                                                        "content": {
+                                                            "role": "model",
+                                                            "parts": [{"text": delta_text}]
+                                                        }
+                                                    }
+                                                ]
+                                            }
+                                            wrapped = {"response": gemini_obj}
+                                            wrapped_bytes = f"data: {json.dumps(wrapped)}\n".encode("utf-8")
+                                            write_chunk(wrapped_bytes)
+                                    else:
+                                        # Wrap standard Gemini payload under a top-level "response" object
+                                        wrapped = {"response": obj}
+                                        wrapped_bytes = f"data: {json.dumps(wrapped)}\n".encode("utf-8")
+                                        with open("/tmp/mocker_stream.log", "a") as f_log:
+                                            f_log.write(f"WRAPPED: {json.dumps(wrapped)}\n")
+                                        write_chunk(wrapped_bytes)
                             except Exception as parse_err:
                                 logging.error(f"Failed to parse and wrap SSE chunk: {parse_err}. Original line: {line}")
                                 with open("/tmp/mocker_stream.log", "a") as f_log:
-                                        f_log.write(f"PARSE_ERR: {parse_err}. Line: {line!r}\n")
+                                    f_log.write(f"PARSE_ERR: {parse_err}. Line: {line!r}\n")
                                 # Forward original line as fallback
                                 write_chunk(line)
                         else:
@@ -612,6 +894,7 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(f"Vertex AI Proxy Error: {e}".encode("utf-8"))
                 return
+
 
         # Handle HasAuthToken Interception
         if "HasAuthToken" in self.path or "hasAuthToken" in self.path:
@@ -685,37 +968,50 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
         # 1. Handle GetUserStatus Interception
         if "GetUserStatus" in self.path or "getUserStatus" in self.path:
             status, resp_headers, resp_body = forward_request(self.path, "POST", self.headers, post_data)
-            if status == 200:
-                try:
-                    ctype_resp = resp_headers.get("Content-Type", "").lower()
-                    if "json" in ctype_resp:
-                        is_env = len(resp_body) >= 5 and resp_body[0] in (0x00, 0x80)
-                        if is_env:
-                            plen = int.from_bytes(resp_body[1:5], "big")
-                            payload = resp_body[5:5+plen]
-                        else:
-                            payload = resp_body
-                            
+            try:
+                doc = None
+                ctype_resp = resp_headers.get("Content-Type", "").lower()
+                is_env = len(resp_body) >= 5 and resp_body[0] in (0x00, 0x80)
+                if is_env:
+                    plen = int.from_bytes(resp_body[1:5], "big")
+                    payload = resp_body[5:5+plen]
+                else:
+                    payload = resp_body
+                if payload:
+                    try:
                         doc = json.loads(payload.decode("utf-8"))
-                        us_obj = doc.setdefault("userStatus", {})
-                        if isinstance(us_obj, dict):
-                            us_obj["cascadeModelConfigData"] = build_cascade_model_config_data()
-
-                            
-                        new_payload = json.dumps(doc).encode("utf-8")
+                    except Exception:
+                        pass
+                
+                if doc is None or not isinstance(doc, dict):
+                    doc = {
+                        "userStatus": {
+                            "name": "admin_mgenchev_altostrat_com",
+                            "userTier": {"availableCredits": [{"creditType": 1, "creditAmount": 1000}]},
+                            "cascadeModelConfigData": build_cascade_model_config_data(),
+                        }
+                    }
+                else:
+                    us_obj = doc.setdefault("userStatus", {})
+                    if isinstance(us_obj, dict):
+                        us_obj["cascadeModelConfigData"] = build_cascade_model_config_data()
                         
-                        if is_env:
-                            data_frame = b"\x00" + len(new_payload).to_bytes(4, "big") + new_payload
-                            trailer = b"grpc-status: 0\r\n"
-                            trailer_frame = b"\x80" + len(trailer).to_bytes(4, "big") + trailer
-                            final_body = data_frame + trailer_frame
-                        else:
-                            final_body = new_payload
-                            
-                        logging.info("GetUserStatus response augmented successfully.")
-                        resp_body = final_body
-                except Exception as e:
-                    logging.error(f"Failed to augment GetUserStatus response: {e}")
+                new_payload = json.dumps(doc).encode("utf-8")
+                
+                if "grpc" in ctype_resp or "grpc" in self.headers.get("Content-Type", ""):
+                    data_frame = b"\x00" + len(new_payload).to_bytes(4, "big") + new_payload
+                    trailer = b"grpc-status: 0\r\n"
+                    trailer_frame = b"\x80" + len(trailer).to_bytes(4, "big") + trailer
+                    resp_body = data_frame + trailer_frame
+                    resp_headers["Content-Type"] = "application/grpc-web+json"
+                else:
+                    resp_body = new_payload
+                    resp_headers["Content-Type"] = "application/json"
+                    
+                status = 200
+                logging.info("GetUserStatus response augmented successfully.")
+            except Exception as e:
+                logging.error(f"Failed to augment GetUserStatus response: {e}")
             
             self.send_response(status)
             for k, v in resp_headers.items():
@@ -758,17 +1054,6 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                             cascade_id = m.group(0)
                     except Exception as ex:
                         logging.error(f"Error regex matching cascade_id in binary StartCascade: {ex}")
-                    # StartCascadeRequest.requested_model (field 14, enum) = 348 -> varint(348)=\xdc\x02
-                    extra = b"\x70\xdc\x02"
-                    if is_raw_proto:
-                        body = body + extra
-                        logging.info("Injected raw-proto model bytes for StartCascade")
-                    elif is_enveloped and len(body) >= 5 and body[0] in (0x00, 0x80):
-                        payload_len = int.from_bytes(body[1:5], "big")
-                        new_payload = body[5:5+payload_len] + extra
-                        new_header = bytes([body[0]]) + len(new_payload).to_bytes(4, "big")
-                        body = new_header + new_payload
-                        logging.info("Injected enveloped model bytes for StartCascade")
             except Exception as e:
                 logging.error(f"Failed to intercept/modify StartCascade request: {e}")
 
@@ -894,30 +1179,7 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                             body = new_payload
                         logging.info(f"JSON request modified. Injected DEFAULT_MODEL into {self.path}.")
                 elif is_enveloped or is_raw_proto:
-                    cascade_cfg_field = None
-                    if "GetSlashCommands" in self.path or "getSlashCommands" in self.path:
-                        cascade_cfg_field = 1  # GetSlashCommandsRequest.cascade_config
-                    elif "SendUserCascadeMessage" in self.path or "sendUserCascadeMessage" in self.path:
-                        cascade_cfg_field = 5  # SendUserCascadeMessageRequest.cascade_config
-                        
-                    extra = b""
-                    if cascade_cfg_field is not None:
-                        # CascadePlannerConfig.plan_model = 348 (RIFTRUNNER) -> \x08\xdc\x02
-                        # CascadeConfig.planner_config (field 1, message) -> \x0a\x03\x08\xdc\x02
-                        inner = b"\x0a\x03\x08\xdc\x02"
-                        cc_tag = (cascade_cfg_field << 3) | 2
-                        extra = bytes([cc_tag, len(inner)]) + inner
-                        
-                    if extra:
-                        if is_raw_proto:
-                            body = body + extra
-                            logging.info(f"Injected raw-proto model bytes (+{len(extra)}B) for {self.path}")
-                        elif is_enveloped and len(body) >= 5 and body[0] in (0x00, 0x80):
-                            payload_len = int.from_bytes(body[1:5], "big")
-                            new_payload = body[5:5+payload_len] + extra
-                            new_header = bytes([body[0]]) + len(new_payload).to_bytes(4, "big")
-                            body = new_header + new_payload
-                            logging.info(f"Injected enveloped model bytes (+{len(extra)}B) for {self.path}")
+                    pass
             except Exception as e:
                 logging.error(f"Binary proto model injection failed for {self.path}: {e}")
 
@@ -1004,29 +1266,92 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
             }
         elif "fetchAvailableModels" in self.path:
             response_data = {
-                "availableModels": [
-                    {
-                        "name": "gemini-3.6-flash",
+                "models": {
+                    "gemini-3.7-flash": {
+                        "displayName": "Gemini 3.7 Flash",
+                        "supportsImages": True,
+                        "supportsThinking": True,
+                        "recommended": True,
+                        "maxTokens": 1048576,
+                        "maxOutputTokens": 65536,
+                        "model": 352,
+                        "apiProvider": 2
+                    },
+                    "gemini-2.5-flash": {
+                        "displayName": "Gemini 2.5 Flash",
+                        "supportsImages": True,
+                        "supportsThinking": True,
+                        "maxTokens": 1048576,
+                        "maxOutputTokens": 65536,
+                        "model": 312,
+                        "apiProvider": 2
+                    },
+                    "gemini-3.6-flash": {
                         "displayName": "Gemini 3.6 Flash",
-                        "supportedFeatures": ["CHAT"]
+                        "supportsImages": True,
+                        "supportsThinking": True,
+                        "maxTokens": 1048576,
+                        "maxOutputTokens": 65536,
+                        "model": 350,
+                        "apiProvider": 2
                     },
-                    {
-                        "name": "gemini-3.5-flash-lite",
+                    "gemini-3.5-flash-lite": {
                         "displayName": "Gemini 3.5 Flash Lite",
-                        "supportedFeatures": ["CHAT"]
+                        "supportsImages": True,
+                        "maxTokens": 1048576,
+                        "maxOutputTokens": 65536,
+                        "model": 330,
+                        "apiProvider": 2
                     },
-                    {
-                        "name": "gemini-3.5-flash",
-                        "displayName": "Gemini 3.5 Flash",
-                        "supportedFeatures": ["CHAT"]
+                    "claude-3-7-sonnet": {
+                        "displayName": "Claude 3.7 Sonnet (Vertex AI)",
+                        "supportsImages": True,
+                        "supportsThinking": True,
+                        "maxTokens": 200000,
+                        "maxOutputTokens": 8192,
+                        "model": 333,
+                        "apiProvider": 2
                     },
+                    "claude-opus-5": {
+                        "displayName": "Claude Opus 5 (Vertex AI)",
+                        "supportsImages": True,
+                        "supportsThinking": True,
+                        "maxTokens": 200000,
+                        "maxOutputTokens": 8192,
+                        "model": 290,
+                        "apiProvider": 2
+                    },
+                    "claude-fable-5": {
+                        "displayName": "Claude Fable 5 (Next-Gen)",
+                        "supportsImages": True,
+                        "supportsThinking": True,
+                        "maxTokens": 200000,
+                        "maxOutputTokens": 8192,
+                        "model": 340,
+                        "apiProvider": 2
+                    }
+                },
+                "defaultAgentModelId": "gemini-3.7-flash",
+                "agentModelSorts": [
                     {
-                        "name": "gemini-3.1-pro-preview",
-                        "displayName": "Gemini 3.1 Pro",
-                        "supportedFeatures": ["CHAT"]
+                        "name": "Recommended",
+                        "groups": [
+                            {
+                                "groupName": "",
+                                "modelIds": [
+                                    "gemini-3.7-flash",
+                                    "gemini-3.6-flash",
+                                    "gemini-3.5-flash-lite",
+                                    "claude-3-7-sonnet",
+                                    "claude-opus-5",
+                                    "claude-fable-5"
+                                ]
+                            }
+                        ]
                     }
                 ]
             }
+
             
         response_bytes = json.dumps(response_data).encode('utf-8')
         

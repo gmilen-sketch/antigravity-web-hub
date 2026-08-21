@@ -106,13 +106,14 @@ gcloud --project=$PROJECT compute instance-groups unmanaged set-named-ports ${NA
 echo "→ Health check (TCP :8080)…"
 gcloud --project=$PROJECT compute health-checks create tcp ${NAME_PREFIX}-hc --port=8080 2>/dev/null || true
 
-echo "→ Backend service (86400s timeout for long streams)…"
+echo "→ Backend service (86400s timeout, GENERATED_COOKIE session affinity for sticky WebSocket/state routing)…"
 gcloud --project=$PROJECT compute backend-services create ${NAME_PREFIX}-bs \
    --global --protocol=HTTP --port-name=http --health-checks=${NAME_PREFIX}-hc \
-   --timeout=86400 2>/dev/null || true
+   --timeout=86400 --session-affinity=GENERATED_COOKIE --affinity-cookie-ttl=86400 2>/dev/null || true
 gcloud --project=$PROJECT compute backend-services add-backend ${NAME_PREFIX}-bs \
   --global --instance-group=${NAME_PREFIX}-ig --instance-group-zone=$VM_ZONE 2>/dev/null || true
-gcloud --project=$PROJECT compute backend-services update ${NAME_PREFIX}-bs --global --timeout=86400 2>/dev/null || true
+gcloud --project=$PROJECT compute backend-services update ${NAME_PREFIX}-bs --global \
+  --timeout=86400 --session-affinity=GENERATED_COOKIE --affinity-cookie-ttl=86400 2>/dev/null || true
 
 echo "→ Google-managed SSL cert for $HOST…"
 # Name the cert per-hostname so changing domain doesn't collide with the

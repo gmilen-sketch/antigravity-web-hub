@@ -22,75 +22,40 @@ RUN_HOME=$(getent passwd "$RUN_USER" | cut -d: -f6)
 
 echo "Installing for user=$RUN_USER home=$RUN_HOME project=$GOOGLE_CLOUD_PROJECT"
 
+# Ensure project workspace directory exists with open permissions
+mkdir -p /mnt/data/projects
+chmod -R 777 /mnt/data
+chown -R "$RUN_USER:$RUN_USER" /mnt/data 2>/dev/null || true
+
 # ---- 1. Antigravity language_server binary ---------------------
 BIN_DIR="$RUN_HOME/.gemini/antigravity/bin"
-mkdir -p "$BIN_DIR"
-chown -R "$RUN_USER:$RUN_USER" "$RUN_HOME/.gemini"
+mkdir -p "$BIN_DIR" "$RUN_HOME/.gemini/config" "$RUN_HOME/.agents" /mnt/data/projects/.agents
 
 if [ -f "$REPO_ROOT/bin/language_server" ]; then
-  echo "Installing native Go language_server from repository package…"
-  rm -f "$BIN_DIR/language_server"
+  echo "Installing language_server from repository bin/..."
   install -o "$RUN_USER" -g "$RUN_USER" -m 0755 "$REPO_ROOT/bin/language_server" "$BIN_DIR/language_server"
-elif [ ! -x "$BIN_DIR/language_server" ]; then
-  if [ -x "$RUN_HOME/.local/bin/agy" ]; then
-    ln -sf "$RUN_HOME/.local/bin/agy" "$BIN_DIR/language_server"
-  else
-    echo "Installing Antigravity CLI (Google's public installer)…"
-    sudo -u "$RUN_USER" bash -c \
-      'curl -fsSL https://antigravity.google/cli/install.sh | bash' || true
-    if [ -x "$RUN_HOME/.local/bin/agy" ]; then
-      ln -sf "$RUN_HOME/.local/bin/agy" "$BIN_DIR/language_server"
-    fi
-  fi
-fi
-
-# Check Application Default Credentials (ADC)
-if [ ! -f "$RUN_HOME/.config/gcloud/application_default_credentials.json" ]; then
-  echo "WARNING: Application Default Credentials (ADC) missing at $RUN_HOME/.config/gcloud/application_default_credentials.json"
-  echo "Please run 'gcloud auth application-default login' to authenticate with Vertex AI."
+elif [ -f "$BIN_DIR/language_server" ]; then
+  echo "Existing language_server found at $BIN_DIR/language_server."
+else
+  echo "Downloading official Antigravity binary from Google CDN..."
+  mkdir -p /tmp/antigravity_dl
+  curl -s -o /tmp/antigravity_dl/Antigravity.tar.gz https://edgedl.me.gvt1.com/edgedl/release2/j0qc3/antigravity/stable/1.16.5-6703236727046144/linux-x64/Antigravity.tar.gz
+  tar -xzf /tmp/antigravity_dl/Antigravity.tar.gz -C /tmp/antigravity_dl Antigravity/resources/app/extensions/antigravity/bin/language_server_linux_x64
+  mv /tmp/antigravity_dl/Antigravity/resources/app/extensions/antigravity/bin/language_server_linux_x64 "$BIN_DIR/language_server"
+  chmod 0755 "$BIN_DIR/language_server"
+  rm -rf /tmp/antigravity_dl
+  echo "Extracted language_server binary to $BIN_DIR/language_server"
 fi
 
 # ---- 2. System dependencies & Python deps -----------------------------------
-echo "Installing system package dependencies (python3-pip, python3-venv, nginx, nodejs, npm)…"
+echo "Installing system package dependencies (python3-pip, python3-venv, nginx, nodejs, npm)..."
 apt-get update -qq && apt-get install -y -qq python3-pip python3-venv nginx nodejs npm curl ca-certificates
 
-echo "Installing Python deps…"
-sudo -u "$RUN_USER" pip install --user --break-system-packages -r requirements.txt
+echo "Installing Python FastMCP & AI dependencies..."
+pip install --break-system-packages -r requirements.txt || true
 
-# ---- 3. Node MCP stub deps ----------------------------------------------
-if command -v npm >/dev/null 2>&1; then
-  echo "Installing Node MCP stub deps…"
-  sudo -u "$RUN_USER" bash -c "cd $REPO_ROOT/src/mcp_node_stub && npm install --silent"
-else
-  echo "npm not found — skipping Node MCP stub (optional)."
-fi
-
-# ---- 4. Data-disk formatting -----------------------------------
-if [ -b /dev/sdb ] && ! blkid /dev/sdb >/dev/null 2>&1 && [ ! -d /mnt/data ]; then
-  ans="y"
-  if [ -t 0 ]; then
-    read -r -p "Format empty /dev/sdb ext4 and mount at /mnt/data? [y/N] " user_ans
-    ans="${user_ans:-n}"
-  fi
-  if [[ "$ans" =~ ^[Yy]$ ]]; then
-    echo "Formatting empty /dev/sdb ext4 and mounting at /mnt/data…"
-    mkfs.ext4 -F -L antigravity-data /dev/sdb
-    mkdir -p /mnt/data
-    UUID=$(blkid -s UUID -o value /dev/sdb)
-    grep -q "$UUID" /etc/fstab || \
-      echo "UUID=$UUID /mnt/data ext4 defaults,nofail 0 2" >> /etc/fstab
-    mount /mnt/data
-    chown -R "$RUN_USER:$RUN_USER" /mnt/data
-    mkdir -p /mnt/data/antigravity/claude_cascades
-    chown -R "$RUN_USER:$RUN_USER" /mnt/data/antigravity
-  fi
-fi
-
-# ---- 5. Install source into the Antigravity SDK bin dir -----------------
-BIN_DIR="$RUN_HOME/.gemini/antigravity/bin"
-mkdir -p "$BIN_DIR/knowledge_graph"
+# ---- 3. Install Source Modules into Antigravity SDK bin dir -----------------
 chown -R "$RUN_USER:$RUN_USER" "$RUN_HOME/.gemini"
-rm -f "$BIN_DIR/proxy.py"
 install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/ccpa_mock.py         "$BIN_DIR/ccpa_mock.py"
 install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/ensure_wal.py        "$BIN_DIR/ensure_wal.py"
 install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/mcp_deep_research.py "$BIN_DIR/mcp_deep_research.py"
@@ -99,34 +64,20 @@ install -o "$RUN_USER" -g "$RUN_USER" -m 0755 config/start_hub.sh      "$BIN_DIR
 # Install Knowledge Graph Long-Term Memory module files
 if [ -d "src/knowledge_graph" ]; then
   echo "Installing Knowledge Graph Long-Term Memory module..."
-  install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/knowledge_graph/kg_engine.py          "$BIN_DIR/knowledge_graph/kg_engine.py"
-  install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/knowledge_graph/init_knowledge_graph.py "$BIN_DIR/knowledge_graph/init_knowledge_graph.py"
-  install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/knowledge_graph/kg_mcp_server.py      "$BIN_DIR/knowledge_graph/kg_mcp_server.py"
+  mkdir -p "$BIN_DIR/knowledge_graph"
+  cp -r src/knowledge_graph/* "$BIN_DIR/knowledge_graph/"
+  chown -R "$RUN_USER:$RUN_USER" "$BIN_DIR/knowledge_graph"
+  chmod +x "$BIN_DIR/knowledge_graph"/*.py 2>/dev/null || true
   sudo -u "$RUN_USER" python3 "$BIN_DIR/knowledge_graph/init_knowledge_graph.py" || true
 fi
 
-# Install Diagram Renderer module
-if [ -d "src/diagram_renderer" ]; then
-  echo "Installing Offline Diagram Renderer module..."
-  mkdir -p "$BIN_DIR/diagram_renderer"
-  install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/diagram_renderer/render_mermaid.py     "$BIN_DIR/diagram_renderer/render_mermaid.py"
-  install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/diagram_renderer/diagram_mcp_server.py "$BIN_DIR/diagram_renderer/diagram_mcp_server.py"
-fi
-
-# Install Six Thinking Hats Reasoning module
-if [ -d "src/six_hats_evaluator" ]; then
-  echo "Installing Six Thinking Hats Evaluator module..."
-  mkdir -p "$BIN_DIR/six_hats_evaluator"
-  install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/six_hats_evaluator/six_hats.py           "$BIN_DIR/six_hats_evaluator/six_hats.py"
-  install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/six_hats_evaluator/six_hats_mcp_server.py "$BIN_DIR/six_hats_evaluator/six_hats_mcp_server.py"
-fi
-
-# Install Playwright Web Scraper module
-if [ -d "src/playwright_scraper" ]; then
-  echo "Installing Playwright Headless Web Scraper module..."
-  mkdir -p "$BIN_DIR/playwright_scraper"
-  install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/playwright_scraper/playwright_scraper.py    "$BIN_DIR/playwright_scraper/playwright_scraper.py"
-  install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/playwright_scraper/playwright_mcp_server.py "$BIN_DIR/playwright_scraper/playwright_mcp_server.py"
+# Install Autonomy Engine module files
+if [ -d "src/autonomy_engine" ]; then
+  echo "Installing Autonomy Engine FastMCP module..."
+  mkdir -p "$BIN_DIR/autonomy_engine"
+  cp -r src/autonomy_engine/* "$BIN_DIR/autonomy_engine/"
+  chown -R "$RUN_USER:$RUN_USER" "$BIN_DIR/autonomy_engine"
+  chmod +x "$BIN_DIR/autonomy_engine"/*.py 2>/dev/null || true
 fi
 
 # Install Google Workspace MCP module
@@ -140,8 +91,8 @@ if [ -d "src/mcp_google_workspace" ]; then
   fi
 fi
 
-# ---- 5a. Configure installed MCP servers in Antigravity configuration ----
-echo "Registering installed MCP servers in Antigravity configuration..."
+# ---- 4. Configure MCP Servers (mcp_config.json) across all discovery search paths ----
+echo "Configuring mcp_config.json across all search paths..."
 sudo -u "$RUN_USER" python3 -c "
 import json, os
 bin_dir = '$BIN_DIR'
@@ -149,84 +100,93 @@ home = '$RUN_HOME'
 
 mcp_cfg = {
   'mcpServers': {
-    'deep_research': {
-      'command': 'python3',
-      'args': [f'{bin_dir}/mcp_deep_research.py', '--transport', 'stdio'],
-      'env': {},
-      'disabled': False
-    },
     'knowledge_graph': {
       'command': 'python3',
-      'args': [f'{bin_dir}/knowledge_graph/kg_mcp_server.py'],
-      'env': {},
-      'disabled': False
+      'args': [f'{bin_dir}/knowledge_graph/kg_mcp_server.py']
     },
-    'diagram_renderer': {
+    'autonomy_engine': {
       'command': 'python3',
-      'args': [f'{bin_dir}/diagram_renderer/diagram_mcp_server.py'],
-      'env': {},
-      'disabled': False
+      'args': [f'{bin_dir}/autonomy_engine/mcp_autonomy_hub.py']
     },
-    'six_hats_evaluator': {
+    'deep_research': {
       'command': 'python3',
-      'args': [f'{bin_dir}/six_hats_evaluator/six_hats_mcp_server.py'],
-      'env': {},
-      'disabled': False
-    },
-    'playwright_scraper': {
-      'command': 'python3',
-      'args': [f'{bin_dir}/playwright_scraper/playwright_mcp_server.py'],
-      'env': {},
-      'disabled': False
+      'args': [f'{bin_dir}/mcp_deep_research.py', '--transport', 'stdio']
     },
     'google_workspace': {
       'command': 'node',
-      'args': [f'{bin_dir}/mcp_google_workspace/index.js'],
-      'env': {},
-      'disabled': False
+      'args': [f'{bin_dir}/mcp_google_workspace/index.js']
     }
   }
 }
 
 paths = [
   f'{home}/.gemini/config/mcp_config.json',
+  f'{home}/.gemini/config/mcp.json',
   f'{home}/.gemini/antigravity/mcp_config.json',
+  f'{home}/.gemini/antigravity/mcp.json',
   f'{home}/.gemini/mcp_config.json',
-  f'{home}/.gemini/config/mcp_servers.json',
+  f'{home}/.gemini/mcp.json',
+  f'{home}/.agents/mcp_config.json',
+  f'{home}/.agents/mcp.json',
+  f'/mnt/data/projects/.agents/mcp_config.json',
+  f'/mnt/data/projects/.agents/mcp.json'
 ]
 
 for p in paths:
   os.makedirs(os.path.dirname(p), exist_ok=True)
   with open(p, 'w') as f:
     json.dump(mcp_cfg, f, indent=2)
-" || true
+"
 
-# ---- 5b. Configure automatic WAL database optimization cron job ----------
-echo "Configuring automatic SQLite WAL database optimizer cron job..."
-(sudo -u "$RUN_USER" crontab -l 2>/dev/null | grep -v "ensure_wal.py" || true; echo "* * * * * $BIN_DIR/ensure_wal.py > /dev/null 2>&1") | sudo -u "$RUN_USER" crontab -
-
-
-# ---- 6. nginx site -------------------------------------------------------
-if command -v nginx >/dev/null 2>&1; then
-  install -m 0644 config/nginx.conf /etc/nginx/sites-available/antigravity-web
-  ln -sf /etc/nginx/sites-available/antigravity-web /etc/nginx/sites-enabled/antigravity-web
-  rm -f /etc/nginx/sites-enabled/default
-  nginx -t && systemctl reload nginx
-else
-  echo "nginx not installed — run 'apt install nginx' and re-run this script."
+# ---- 5. Install Community Skills and configure skills.json ----
+if [ -d "skills" ]; then
+  echo "Installing Community Skills catalog..."
+  for skill_path in skills/*; do
+    if [ -d "$skill_path" ]; then
+      skill_name=\$(basename "$skill_path")
+      for dest in "$RUN_HOME/.gemini/config/skills/$skill_name" \
+                  "$RUN_HOME/.gemini/antigravity/skills/$skill_name" \
+                  "$RUN_HOME/.gemini/skills/$skill_name" \
+                  "$RUN_HOME/.agents/skills/$skill_name" \
+                  "/mnt/data/projects/.agents/skills/$skill_name"; do
+        mkdir -p "\$(dirname "$dest")"
+        rm -rf "$dest"
+        cp -r "$skill_path" "$dest"
+        chown -R "$RUN_USER:$RUN_USER" "$dest"
+      done
+    fi
+  done
 fi
 
-# ---- 7. systemd unit + env file -----------------------------------------
+# ---- 6. Bypass Onboarding Screen with jetski_state.pbtxt ----
+echo "Writing onboarding bypass state..."
+if [ -f "config/jetski_state.pbtxt" ]; then
+  cp config/jetski_state.pbtxt "$RUN_HOME/.gemini/antigravity/jetski_state.pbtxt"
+  cp config/jetski_state.pbtxt "$BIN_DIR/jetski_state.pbtxt"
+  chown "$RUN_USER:$RUN_USER" "$RUN_HOME/.gemini/antigravity/jetski_state.pbtxt" "$BIN_DIR/jetski_state.pbtxt"
+fi
+
+# ---- 7. Configure Nginx Reverse Proxy ----
+if command -v nginx >/dev/null 2>&1; then
+  install -m 0644 config/nginx.conf /etc/nginx/sites-available/default
+  nginx -t && systemctl reload nginx || systemctl restart nginx
+fi
+
+# ---- 8. Configure Nightly Dreaming & SQLite WAL Maintenance Crontabs ----
+echo "Configuring automatic SQLite WAL and Nightly Dreaming (23:50 UTC) crontab..."
+(sudo -u "$RUN_USER" crontab -l 2>/dev/null | grep -v "dreaming_engine.py" | grep -v "ensure_wal.py" || true; \
+ echo "* * * * * python3 $BIN_DIR/ensure_wal.py > /dev/null 2>&1"; \
+ echo "50 23 * * * python3 $BIN_DIR/knowledge_graph/dreaming_engine.py --hours 24 >> /tmp/dreaming.log 2>&1") | sudo -u "$RUN_USER" crontab -
+
+# ---- 9. Systemd Service Configuration ----
 sed "s/REPLACE_USER/$RUN_USER/g" config/antigravity-web.service \
   > /etc/systemd/system/antigravity-web.service
-install -m 0644 .env /etc/antigravity-web.env
+install -m 0644 .env /etc/antigravity-web.env 2>/dev/null || true
 
 systemctl daemon-reload
 systemctl enable antigravity-web.service
 systemctl restart antigravity-web.service
 
 echo
-echo "Done. Tail logs with:"
-echo "  journalctl -u antigravity-web.service -f"
-echo
-echo "Visit  https://${PUBLIC_HOSTNAME:-<your-lb-ip>.nip.io}/"
+echo "✅ Antigravity Web Hub Installation Complete."
+echo "Tail logs with: journalctl -u antigravity-web.service -f"

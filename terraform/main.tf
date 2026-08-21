@@ -222,12 +222,14 @@ resource "google_compute_managed_ssl_certificate" "ssl_cert" {
 # 6. Global Backend Service with IAP & HTTPS Load Balancer
 # ------------------------------------------------------------------------------
 resource "google_compute_backend_service" "backend" {
-  name                  = "${var.name_prefix}-bs"
-  protocol              = "HTTP"
-  port_name             = "http"
-  timeout_sec           = 86400
-  health_checks         = [google_compute_health_check.hc.id]
-  load_balancing_scheme = "EXTERNAL"
+  name                    = "${var.name_prefix}-bs"
+  protocol                = "HTTP"
+  port_name               = "http"
+  timeout_sec             = 86400
+  session_affinity        = "GENERATED_COOKIE"
+  affinity_cookie_ttl_sec = 86400
+  health_checks           = [google_compute_health_check.hc.id]
+  load_balancing_scheme   = "EXTERNAL"
 
   backend {
     group = google_compute_instance_group.unmanaged_ig.id

@@ -1,0 +1,36 @@
+agent_onboarding_completed: AGENT_ONBOARDING_STATE_COMPLETED
+post_onboarding:  {
+  completed_steps:  POST_ONBOARDING_STEP_TYPE_MANAGER_WELCOME
+  completed_steps:  POST_ONBOARDING_STEP_TYPE_USAGE_MODE
+  completed_steps:  POST_ONBOARDING_STEP_TYPE_AGENT_CONFIGURATION
+  completed_steps:  POST_ONBOARDING_STEP_TYPE_ADD_WORKSPACE
+}
+seen_nuxs:  {
+  uids:  1
+  uids:  2
+  uids:  3
+  uids:  4
+  uids:  5
+  uids:  6
+  uids:  7
+  uids:  8
+  uids:  9
+  uids:  10
+  uids:  11
+  uids:  12
+  uids:  13
+  uids:  14
+  uids:  15
+  uids:  16
+  uids:  17
+  uids:  18
+  uids:  19
+  uids:  20
+  uids:  21
+  uids:  22
+  uids:  23
+}
+last_selected_agent_model:  MODEL_GOOGLE_GEMINI_RIFTRUNNER_THINKING_LOW
+migrate_convos_into_projects:  MIGRATION_STATUS_COMPLETED
+installation_uuid:  "257c32c1-fc1f-4382-b186-07d1ea12c9de"
+migrate_retroactive_projects:  RETROACTIVE_MIGRATION_STATUS_COMPLETED_UNNECESSARY

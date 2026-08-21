@@ -4,6 +4,22 @@ All notable changes to the **Antigravity Web Hub** project will be documented in
 
 ---
 
+## [3.1.0] - 2026-08-21 — 🚀 Multi-Model Routing, FastMCP & Clean-Room Automation
+
+### 🌟 Major Enhancements
+- **Dynamic Multi-Model Catalog Routing (`src/ccpa_mock.py`)**: Real-time intercept and model translation supporting `Gemini 3.7 Flash`, `Gemini 3.6 Flash`, `Gemini 3.5 Flash Lite`, `Claude 3.7 Sonnet`, `Claude Opus 5`, and `Claude Fable 5`.
+- **FastMCP Protocol Implementation**: Migrated all auxiliary tools to standard Model Context Protocol (MCP) servers (`transport="stdio"`):
+  - `knowledge_graph`: SQLite-WAL property graph with ACT-R decay and `/dev/shm/` fast cache.
+  - `autonomy_engine`: AAAK 3-pass token compression, 4-voice polyphonic factual search, and context envelope hydration.
+  - `deep_research`: Agentic research loop with live search and web fetch.
+  - `google_workspace`: Native asynchronous Gmail, Calendar, Drive, and Sheets operations.
+- **Compute-Optimized `c2-standard-8` Infrastructure**: Default VM upgraded to 8 vCPUs / 32 GB RAM for responsive language server compilation and 8-worker Nginx reverse proxy dispatch.
+- **Single-Command Destroy $\rightarrow$ Deploy $\rightarrow$ Verify Pipeline (`scripts/deploy_and_verify.sh`)**: Fully automated clean-room orchestration with automated Headless Chrome CDP browser verification, prompt submission, and live thread validation.
+- **Community Skills Catalog**: Bundled 8 pre-configured agent skills in `skills/` with automated multi-path discovery (`~/.gemini/config/skills/`, `.agents/skills/`, and `skills.json`).
+- **Storage Bridge & Zero-Friction Onboarding**: Automated `jetski_state.pbtxt` initialization and Nginx `<head>` injection of `window.nativeStorage` and `window.electronNative` polyfills.
+
+---
+
 ## [3.0.0] - 2026-07-22 — 🌟 Official First Stable Release
 
 ### 🚀 Production Highlights

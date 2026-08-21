@@ -39,7 +39,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s
 log = logging.getLogger("mcp_deep_research")
 
 # --- Config -----------------------------------------------------------------
-PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT") or _die("GOOGLE_CLOUD_PROJECT env var required")
+PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "firsttestproject-343414")
 VERTEX_MODEL = os.environ.get("MCP_VERTEX_MODEL", "claude-opus-4-8")
 VERTEX_REGION = os.environ.get("MCP_VERTEX_REGION", "global")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -92,19 +92,35 @@ _ADC_CREDS = None
 def _get_adc_token() -> str | None:
     """Return an ADC access token or None if ADC is not available."""
     global _ADC_CREDS
-    if not _HAVE_GOOGLE_AUTH:
-        return None
+    if _HAVE_GOOGLE_AUTH:
+        try:
+            if _ADC_CREDS is None:
+                _ADC_CREDS, _ = google.auth.default(
+                    scopes=["https://www.googleapis.com/auth/cloud-platform"],
+                )
+            if not _ADC_CREDS.valid:
+                _ADC_CREDS.refresh(google.auth.transport.requests.Request())
+            if _ADC_CREDS.token:
+                return _ADC_CREDS.token
+        except Exception as e:
+            log.warning(f"ADC token refresh via google.auth failed: {e}")
+
+    # Fallback to GCE Metadata server
     try:
-        if _ADC_CREDS is None:
-            _ADC_CREDS, _ = google.auth.default(
-                scopes=["https://www.googleapis.com/auth/cloud-platform"],
-            )
-        if not _ADC_CREDS.valid:
-            _ADC_CREDS.refresh(google.auth.transport.requests.Request())
-        return _ADC_CREDS.token
+        import urllib.request
+        req = urllib.request.Request(
+            "http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token",
+            headers={"Metadata-Flavor": "Google"},
+        )
+        with urllib.request.urlopen(req, timeout=2.0) as resp:
+            data = json.loads(resp.read().decode())
+            tok = data.get("access_token")
+            if tok:
+                return tok
     except Exception as e:
-        log.warning(f"ADC token refresh failed: {e}")
-        return None
+        log.debug(f"Metadata server token fetch failed: {e}")
+
+    return None
 
 
 # --- Tool implementations ---------------------------------------------------
@@ -409,9 +425,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8093)
-    ap.add_argument("--transport", default="http",
+    ap.add_argument("--transport", default="stdio",
                     choices=["http", "sse", "stdio"],
-                    help="http = Streamable HTTP (default); sse = SSE fallback")
+                    help="stdio = Standard IO for MCP client (default); http = Streamable HTTP; sse = SSE fallback")
     args = ap.parse_args()
 
     log.info(
