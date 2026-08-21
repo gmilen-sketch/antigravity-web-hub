@@ -8,8 +8,15 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
 if [ ! -f .env ]; then
-  echo "Missing .env — copy .env.example to .env and fill it in first." >&2
-  exit 1
+  if [ -f .env.example ]; then
+    echo "No .env found — auto-generating .env from .env.example..."
+    cp .env.example .env
+    sed -i "s/your-gcp-project-id/${GOOGLE_CLOUD_PROJECT:-second-test-project-393510}/g" .env
+    sed -i "s/your-vm-name/${VM_NAME:-antigravity-ge-hub}/g" .env
+  else
+    echo "Missing .env and .env.example" >&2
+    exit 1
+  fi
 fi
 # Export .env into this shell
 set -a; . ./.env; set +a
@@ -23,13 +30,14 @@ RUN_HOME=$(getent passwd "$RUN_USER" | cut -d: -f6)
 echo "Installing for user=$RUN_USER home=$RUN_HOME project=$GOOGLE_CLOUD_PROJECT"
 
 # Ensure project workspace directory exists with open permissions
-mkdir -p /mnt/data/projects
-chmod -R 777 /mnt/data
+mkdir -p /mnt/data/projects/.agents
+chmod -R 777 /mnt/data 2>/dev/null || true
 chown -R "$RUN_USER:$RUN_USER" /mnt/data 2>/dev/null || true
 
 # ---- 1. Antigravity language_server binary ---------------------
 BIN_DIR="$RUN_HOME/.gemini/antigravity/bin"
 mkdir -p "$BIN_DIR" "$RUN_HOME/.gemini/config" "$RUN_HOME/.agents" /mnt/data/projects/.agents
+chown -R "$RUN_USER:$RUN_USER" "$RUN_HOME/.gemini" "$RUN_HOME/.agents" /mnt/data/projects 2>/dev/null || true
 
 if [ -f "$REPO_ROOT/bin/language_server" ]; then
   echo "Installing language_server from repository bin/..."
@@ -133,9 +141,12 @@ paths = [
 ]
 
 for p in paths:
-  os.makedirs(os.path.dirname(p), exist_ok=True)
-  with open(p, 'w') as f:
-    json.dump(mcp_cfg, f, indent=2)
+  try:
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    with open(p, 'w') as f:
+      json.dump(mcp_cfg, f, indent=2)
+  except Exception as e:
+    pass
 "
 
 # ---- 5. Install Community Skills and configure skills.json ----
@@ -143,16 +154,16 @@ if [ -d "skills" ]; then
   echo "Installing Community Skills catalog..."
   for skill_path in skills/*; do
     if [ -d "$skill_path" ]; then
-      skill_name=\$(basename "$skill_path")
+      skill_name=$(basename "$skill_path")
       for dest in "$RUN_HOME/.gemini/config/skills/$skill_name" \
                   "$RUN_HOME/.gemini/antigravity/skills/$skill_name" \
                   "$RUN_HOME/.gemini/skills/$skill_name" \
                   "$RUN_HOME/.agents/skills/$skill_name" \
                   "/mnt/data/projects/.agents/skills/$skill_name"; do
-        mkdir -p "\$(dirname "$dest")"
+        mkdir -p "$(dirname "$dest")"
         rm -rf "$dest"
         cp -r "$skill_path" "$dest"
-        chown -R "$RUN_USER:$RUN_USER" "$dest"
+        chown -R "$RUN_USER:$RUN_USER" "$dest" 2>/dev/null || true
       done
     fi
   done
@@ -166,8 +177,10 @@ if [ -f "config/jetski_state.pbtxt" ]; then
   chown "$RUN_USER:$RUN_USER" "$RUN_HOME/.gemini/antigravity/jetski_state.pbtxt" "$BIN_DIR/jetski_state.pbtxt"
 fi
 
-# ---- 7. Configure Nginx Reverse Proxy ----
+# ---- 7. Configure Nginx Reverse Proxy & Bootstrap Bridge ----
 if command -v nginx >/dev/null 2>&1; then
+  mkdir -p /var/www/html
+  install -m 0644 src/bootstrap.js /var/www/html/bootstrap.js
   install -m 0644 config/nginx.conf /etc/nginx/sites-available/default
   nginx -t && systemctl reload nginx || systemctl restart nginx
 fi

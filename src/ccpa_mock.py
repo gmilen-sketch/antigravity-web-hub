@@ -502,6 +502,16 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         logging.info("%s - - %s" % (self.address_string(), format%args))
 
+    def do_OPTIONS(self):
+        self.send_response(204)
+        origin = self.headers.get("Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", origin)
+        self.send_header("Access-Control-Allow-Credentials", "true")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE, HEAD")
+        self.send_header("Access-Control-Allow-Headers", "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,x-codeium-csrf-token,x-csrf-token,connect-protocol-version,x-grpc-web,x-user-agent,grpc-timeout")
+        self.send_header("Access-Control-Max-Age", "1728000")
+        self.end_headers()
+
     def forward_and_stream(self, path, method, headers, body):
         _server_ready.wait(timeout=12.0)
         url = f"http://127.0.0.1:8081{path}"
@@ -674,7 +684,7 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
             logging.info(f"--- STREAM GENERATE CONTENT INTERCEPTED ---")
             
             token = get_adc_token()
-            if not token:
+            if not token and not os.environ.get("ANTHROPIC_API_KEY"):
                 self.send_response(500)
                 self.end_headers()
                 self.wfile.write(b"No ADC Token Available")
@@ -682,6 +692,8 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
 
             payload_bytes = post_data
             is_anthropic = False
+            model = "gemini-3.7-flash"
+            doc = {}
             try:
                 doc = json.loads(post_data.decode("utf-8"))
                 logging.info(f"Payload: {json.dumps(doc, indent=2)}")
@@ -694,7 +706,6 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                     model = active_ui_model
                     logging.info(f"Using model selected from active UI: {model}")
                 else:
-                    model = "gemini-3.7-flash"
                     req_model = doc.get("model") or doc.get("modelName") or doc.get("model_name")
                     if req_model:
                         model = map_model_name(req_model)
@@ -731,6 +742,10 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                     if system_prompt:
                         anthropic_payload["system"] = system_prompt
                         
+                    anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+                    if anthropic_api_key:
+                        anthropic_payload["model"] = model.split("@")[0].replace("claude-opus-5", "claude-3-opus-20240229").replace("claude-3-opus", "claude-3-opus-20240229").replace("claude-3-7-sonnet", "claude-3-7-sonnet-20250219")
+                        
                     payload_bytes = json.dumps(anthropic_payload).encode("utf-8")
                     logging.info(f"Forwarding Anthropic Messages payload for model: {model}")
                 else:
@@ -760,16 +775,33 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
             except Exception as e:
                 logging.error(f"Failed to parse and clean streamGenerateContent payload: {e}")
 
-            if is_anthropic:
-                anthropic_location = "global"
-                vertex_url = f"https://aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/global/publishers/anthropic/models/{model}:streamRawPredict"
+            anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+            if is_anthropic and anthropic_api_key:
+                vertex_url = "https://api.anthropic.com/v1/messages"
+                req_headers = {
+                    "x-api-key": anthropic_api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json"
+                }
+            elif is_anthropic:
+                anthropic_location = os.environ.get("MCP_VERTEX_REGION", "us-east5")
+                if anthropic_location == "global":
+                    anthropic_location = "us-east5"
+                vertex_url = f"https://{anthropic_location}-aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/{anthropic_location}/publishers/anthropic/models/{model}:streamRawPredict"
+                req_headers = {
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                }
             else:
-                # Use v1beta1 REST endpoint with 'global' location as verified working
                 vertex_url = f"https://aiplatform.googleapis.com/v1beta1/projects/{PROJECT_ID}/locations/global/publishers/google/models/{model}:streamGenerateContent?alt=sse"
+                req_headers = {
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                }
                 
-            logging.info(f"Forwarding stream to Vertex AI: {vertex_url}")
+            logging.info(f"Forwarding stream to model endpoint: {vertex_url}")
             
-            max_retries = 5
+            max_retries = 3
             backoff_base = 1.0
             attempt = 0
             resp = None
@@ -780,34 +812,49 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                     req = urllib.request.Request(
                         vertex_url,
                         data=payload_bytes,
-                        headers={
-                            "Authorization": f"Bearer {token}",
-                            "Content-Type": "application/json",
-                        },
+                        headers=req_headers,
                         method="POST",
                     )
-                    resp = urllib.request.urlopen(req)
+                    resp = urllib.request.urlopen(req, timeout=120)
                     break
                 except urllib.error.HTTPError as he:
-                    if he.code in (401, 403, 429, 500, 502, 503, 504) and attempt < max_retries:
+                    if he.code in (404, 403) and is_anthropic:
+                        logging.warning(f"Anthropic model {model} not enabled or unavailable on Vertex AI (HTTP {he.code}). Seamlessly falling back to gemini-3.7-flash...")
+                        is_anthropic = False
+                        fallback_model = "gemini-3.7-flash"
+                        vertex_url = f"https://aiplatform.googleapis.com/v1beta1/projects/{PROJECT_ID}/locations/global/publishers/google/models/{fallback_model}:streamGenerateContent?alt=sse"
+                        inner_gemini = doc.get("request", doc)
+                        allowed_keys = {"contents", "systemInstruction", "tools", "toolConfig", "generationConfig", "safetySettings"}
+                        cleaned_gemini = {k: v for k, v in inner_gemini.items() if k in allowed_keys}
+                        payload_bytes = json.dumps(cleaned_gemini).encode("utf-8")
+                        req_headers = {
+                            "Authorization": f"Bearer {token}",
+                            "Content-Type": "application/json",
+                        }
+                        req = urllib.request.Request(vertex_url, data=payload_bytes, headers=req_headers, method="POST")
+                        resp = urllib.request.urlopen(req, timeout=120)
+                        break
+                    elif he.code in (401, 429, 500, 502, 503, 504) and attempt < max_retries:
                         sleep_time = backoff_base * (2 ** (attempt - 1))
-                        logging.warning(f"Vertex AI stream request returned HTTP {he.code}. Retrying in {sleep_time:.2f}s (attempt {attempt}/{max_retries})...")
+                        logging.warning(f"Model stream request returned HTTP {he.code}. Retrying in {sleep_time:.2f}s (attempt {attempt}/{max_retries})...")
                         time.sleep(sleep_time)
                         token = get_adc_token(force=True)
+                        req_headers["Authorization"] = f"Bearer {token}"
                     else:
-                        logging.error(f"Vertex AI stream HTTPError: {he.code} {he.reason}")
+                        logging.error(f"Model stream HTTPError: {he.code} {he.reason}")
                         try:
                             err_body = he.read().decode('utf-8', errors='ignore')
-                            logging.error(f"Vertex AI error body: {err_body}")
+                            logging.error(f"Error body: {err_body}")
                         except Exception:
                             pass
                         raise he
                 except Exception as ex:
                     if attempt < max_retries:
                         sleep_time = backoff_base * (2 ** (attempt - 1))
-                        logging.warning(f"Vertex AI stream request encountered exception: {ex}. Retrying in {sleep_time:.2f}s (attempt {attempt}/{max_retries})...")
+                        logging.warning(f"Model stream request encountered exception: {ex}. Retrying in {sleep_time:.2f}s (attempt {attempt}/{max_retries})...")
                         time.sleep(sleep_time)
                         token = get_adc_token(force=True)
+                        req_headers["Authorization"] = f"Bearer {token}"
                     else:
                         raise ex
 
@@ -865,12 +912,12 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                                                 ]
                                             }
                                             wrapped = {"response": gemini_obj}
-                                            wrapped_bytes = f"data: {json.dumps(wrapped)}\n".encode("utf-8")
+                                            wrapped_bytes = f"data: {json.dumps(wrapped)}\n\n".encode("utf-8")
                                             write_chunk(wrapped_bytes)
                                     else:
                                         # Wrap standard Gemini payload under a top-level "response" object
                                         wrapped = {"response": obj}
-                                        wrapped_bytes = f"data: {json.dumps(wrapped)}\n".encode("utf-8")
+                                        wrapped_bytes = f"data: {json.dumps(wrapped)}\n\n".encode("utf-8")
                                         with open("/tmp/mocker_stream.log", "a") as f_log:
                                             f_log.write(f"WRAPPED: {json.dumps(wrapped)}\n")
                                         write_chunk(wrapped_bytes)
@@ -878,7 +925,6 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                                 logging.error(f"Failed to parse and wrap SSE chunk: {parse_err}. Original line: {line}")
                                 with open("/tmp/mocker_stream.log", "a") as f_log:
                                     f_log.write(f"PARSE_ERR: {parse_err}. Line: {line!r}\n")
-                                # Forward original line as fallback
                                 write_chunk(line)
                         else:
                             with open("/tmp/mocker_stream.log", "a") as f_log:
@@ -965,6 +1011,36 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(final_body)
             return
 
+        # 0. Handle GetLocalUserInfo Interception
+        if "GetLocalUserInfo" in self.path or "getLocalUserInfo" in self.path:
+            import getpass
+            username = os.environ.get("USER") or getpass.getuser() or "admin_mgenchev_altostrat_com"
+            home_dir = os.environ.get("HOME") or f"/home/{username}"
+            doc = {
+                "username": username,
+                "homeDirUri": f"file://{home_dir}"
+            }
+            payload = json.dumps(doc).encode("utf-8")
+            data_frame = b"\x00" + len(payload).to_bytes(4, "big") + payload
+            trailer = b"grpc-status: 0\r\nGrpc-Status: 0\r\ngrpc-message: OK\r\nGrpc-Message: OK\r\n"
+            trailer_frame = b"\x80" + len(trailer).to_bytes(4, "big") + trailer
+            resp_body = data_frame + trailer_frame
+            
+            self.send_response(200)
+            self.send_header("Content-Type", "application/grpc-web+json")
+            self.send_header("Access-Control-Allow-Origin", self.headers.get("Origin", "*"))
+            self.send_header("Access-Control-Allow-Credentials", "true")
+            self.send_header("Grpc-Status", "0")
+            self.send_header("grpc-status", "0")
+            self.send_header("Grpc-Message", "OK")
+            self.send_header("grpc-message", "OK")
+            self.send_header("Access-Control-Expose-Headers", "Content-Length,Content-Range,grpc-status,grpc-message,grpc-status-details-bin,connect-protocol-version,grpc-encoding,grpc-accept-encoding,Grpc-Status,Grpc-Message,Grpc-Status-Details-Bin")
+            self.send_header("Content-Length", str(len(resp_body)))
+            self.end_headers()
+            self.wfile.write(resp_body)
+            logging.info(f"GetLocalUserInfo handled successfully: {doc}")
+            return
+
         # 1. Handle GetUserStatus Interception
         if "GetUserStatus" in self.path or "getUserStatus" in self.path:
             status, resp_headers, resp_body = forward_request(self.path, "POST", self.headers, post_data)
@@ -992,6 +1068,8 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                         }
                     }
                 else:
+                    doc.pop("code", None)
+                    doc.pop("message", None)
                     us_obj = doc.setdefault("userStatus", {})
                     if isinstance(us_obj, dict):
                         us_obj["cascadeModelConfigData"] = build_cascade_model_config_data()
@@ -1137,6 +1215,15 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
             "GetSlashCommands", "getSlashCommands",
             "SendUserCascadeMessage", "sendUserCascadeMessage",
             "StreamAgentStateUpdates", "streamAgentStateUpdates",
+            "JetboxSubscribeToSummaries", "jetboxSubscribeToSummaries",
+            "JetboxSubscribeToState", "jetboxSubscribeToState",
+            "ProjectUpdatesStream", "projectUpdatesStream",
+            "GetAgentScripts", "getAgentScripts",
+            "GetAllSkills", "getAllSkills",
+            "GetAllRules", "getAllRules",
+            "GetMendelFlags", "getMendelFlags",
+            "RecordAnalyticsEvent", "recordAnalyticsEvent",
+            "RecordError", "recordError",
             "FetchConversationAnnotations", "fetchConversationAnnotations",
             "UpdateConversationAnnotations", "updateConversationAnnotations",
             "GetCascade", "getCascade"
