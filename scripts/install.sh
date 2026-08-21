@@ -43,7 +43,17 @@ BIN_DIR="$RUN_HOME/.gemini/antigravity/bin"
 mkdir -p "$BIN_DIR" "$RUN_HOME/.gemini/config" "$RUN_HOME/.agents" /mnt/data/projects/.agents
 chown -R "$RUN_USER:$RUN_USER" "$RUN_HOME/.gemini" "$RUN_HOME/.agents" /mnt/data/projects 2>/dev/null || true
 
-if [ -f "$BIN_DIR/language_server" ] && ! strings "$BIN_DIR/language_server" 2>/dev/null | grep -q "InitGoogle"; then
+if [ -f "$REPO_ROOT/bin/language_server" ]; then
+  echo "Installing language_server from repository package..."
+  cp "$REPO_ROOT/bin/language_server" "$BIN_DIR/language_server"
+  chmod 0755 "$BIN_DIR/language_server"
+  chown "$RUN_USER:$RUN_USER" "$BIN_DIR/language_server"
+elif [ -f "/tmp/working_language_server" ]; then
+  echo "Installing language_server from /tmp/working_language_server..."
+  cp "/tmp/working_language_server" "$BIN_DIR/language_server"
+  chmod 0755 "$BIN_DIR/language_server"
+  chown "$RUN_USER:$RUN_USER" "$BIN_DIR/language_server"
+elif [ -f "$BIN_DIR/language_server" ]; then
   echo "Valid standalone language_server found at $BIN_DIR/language_server."
 else
   echo "Downloading official Antigravity binary from Google CDN..."
