@@ -8,8 +8,15 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO_ROOT"
 
 if [ ! -f .env ]; then
-  echo "Missing .env — copy .env.example to .env and fill it in first." >&2
-  exit 1
+  if [ -f .env.example ]; then
+    echo "No .env found — auto-generating .env from .env.example..."
+    cp .env.example .env
+    sed -i "s/your-gcp-project-id/${GOOGLE_CLOUD_PROJECT:-second-test-project-393510}/g" .env
+    sed -i "s/your-vm-name/${VM_NAME:-antigravity-ge-hub}/g" .env
+  else
+    echo "Missing .env and .env.example" >&2
+    exit 1
+  fi
 fi
 # Export .env into this shell
 set -a; . ./.env; set +a
@@ -23,13 +30,14 @@ RUN_HOME=$(getent passwd "$RUN_USER" | cut -d: -f6)
 echo "Installing for user=$RUN_USER home=$RUN_HOME project=$GOOGLE_CLOUD_PROJECT"
 
 # Ensure project workspace directory exists with open permissions
-mkdir -p /mnt/data/projects
-chmod -R 777 /mnt/data
+mkdir -p /mnt/data/projects/.agents
+chmod -R 777 /mnt/data 2>/dev/null || true
 chown -R "$RUN_USER:$RUN_USER" /mnt/data 2>/dev/null || true
 
 # ---- 1. Antigravity language_server binary ---------------------
 BIN_DIR="$RUN_HOME/.gemini/antigravity/bin"
 mkdir -p "$BIN_DIR" "$RUN_HOME/.gemini/config" "$RUN_HOME/.agents" /mnt/data/projects/.agents
+chown -R "$RUN_USER:$RUN_USER" "$RUN_HOME/.gemini" "$RUN_HOME/.agents" /mnt/data/projects 2>/dev/null || true
 
 if [ -f "$REPO_ROOT/bin/language_server" ]; then
   echo "Installing language_server from repository bin/..."
@@ -133,9 +141,12 @@ paths = [
 ]
 
 for p in paths:
-  os.makedirs(os.path.dirname(p), exist_ok=True)
-  with open(p, 'w') as f:
-    json.dump(mcp_cfg, f, indent=2)
+  try:
+    os.makedirs(os.path.dirname(p), exist_ok=True)
+    with open(p, 'w') as f:
+      json.dump(mcp_cfg, f, indent=2)
+  except Exception as e:
+    pass
 "
 
 # ---- 5. Install Community Skills and configure skills.json ----
