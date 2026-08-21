@@ -122,8 +122,14 @@ CERT_NAME="${NAME_PREFIX}-cert-$(echo "$HOST" | tr '.' '-' | tr '[:upper:]' '[:l
 gcloud --project=$PROJECT compute ssl-certificates create $CERT_NAME \
    --global --domains=$HOST 2>/dev/null || true
 
-echo "→ URL map, target HTTPS proxy (using cert $CERT_NAME), forwarding rule…"
+echo "→ URL map, target HTTP & HTTPS proxies (using cert $CERT_NAME), forwarding rules…"
 gcloud --project=$PROJECT compute url-maps create ${NAME_PREFIX}-um --default-service=${NAME_PREFIX}-bs 2>/dev/null || true
+
+# Target HTTP proxy + Port 80 forwarding rule (instant access without waiting for SSL cert)
+gcloud --project=$PROJECT compute target-http-proxies create ${NAME_PREFIX}-http-proxy \
+   --url-map=${NAME_PREFIX}-um 2>/dev/null || true
+gcloud --project=$PROJECT compute forwarding-rules create ${NAME_PREFIX}-http-fr \
+   --global --address=${NAME_PREFIX}-ip --target-http-proxy=${NAME_PREFIX}-http-proxy --ports=80 2>/dev/null || true
 
 if gcloud --project=$PROJECT compute target-https-proxies describe ${NAME_PREFIX}-tp --global >/dev/null 2>&1; then
   # Update cert if it's different from current binding

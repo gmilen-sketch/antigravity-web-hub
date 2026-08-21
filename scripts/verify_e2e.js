@@ -116,9 +116,13 @@ async function verify() {
   console.log('Verifying Model Switching: Selecting Claude 3.7 Sonnet...');
   await send('Runtime.evaluate', {
     expression: `(() => {
-      const btns = Array.from(document.querySelectorAll('button'));
-      const claude = btns.find(b => b.innerText.includes('Claude 3.7 Sonnet'));
-      if (claude) claude.click();
+      const allEls = Array.from(document.querySelectorAll('*'));
+      const claude = allEls.find(el => el.children.length === 0 && el.innerText && el.innerText.includes('Claude 3.7 Sonnet'));
+      if (claude) {
+        claude.click();
+        const p = claude.closest('button, [role="menuitem"], [role="option"], div');
+        if (p) p.click();
+      }
     })()`
   });
   await new Promise(r => setTimeout(r, 1000));

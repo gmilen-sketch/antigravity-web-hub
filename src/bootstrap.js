@@ -62,22 +62,20 @@
   document.addEventListener('click', function(e) {
     var target = e.target;
     while (target && target !== document.body) {
-      if (target.tagName === 'BUTTON' || target.getAttribute('role') === 'button') {
-        var text = target.innerText || '';
-        var aria = target.getAttribute('aria-label') || '';
-        if (aria.indexOf('Select model, current') === -1) {
-          for (var key in modelMap) {
-            if (text.indexOf(key) !== -1) {
-              var matched = modelMap[key];
-              currentSelectedModel = matched.enumVal;
-              try { localStorage.setItem('antigravity_selected_model', String(matched.enumVal)); } catch (err) {}
-              console.log('[Bootstrap] User selected model:', matched.name, matched.enumVal);
-              updateModelButtonText(matched.name);
-              setTimeout(function() { updateModelButtonText(matched.name); }, 50);
-              setTimeout(function() { updateModelButtonText(matched.name); }, 150);
-              setTimeout(function() { updateModelButtonText(matched.name); }, 400);
-              return;
-            }
+      var text = target.innerText || '';
+      var aria = target.getAttribute('aria-label') || '';
+      if (aria.indexOf('Select model, current') === -1) {
+        for (var key in modelMap) {
+          if (text.indexOf(key) !== -1) {
+            var matched = modelMap[key];
+            currentSelectedModel = matched.enumVal;
+            try { localStorage.setItem('antigravity_selected_model', String(matched.enumVal)); } catch (err) {}
+            console.log('[Bootstrap] User selected model:', matched.name, matched.enumVal);
+            updateModelButtonText(matched.name);
+            setTimeout(function() { updateModelButtonText(matched.name); }, 50);
+            setTimeout(function() { updateModelButtonText(matched.name); }, 150);
+            setTimeout(function() { updateModelButtonText(matched.name); }, 400);
+            return;
           }
         }
       }

@@ -20,30 +20,22 @@ BIN_DIR="$HOME/.gemini/antigravity/bin"
 # 1. Initialize Knowledge Graph Long-Term Memory
 python3 "$BIN_DIR/init_knowledge_graph.py" 2>/dev/null || true
 
-# 2. Start CCPA Mock Server
+# 2. Start CCPA Mock Server (Primary Backend Service)
 echo "Starting CCPA Mock Server..."
 python3 "$BIN_DIR/ccpa_mock.py" > /tmp/ccpa_mock.log 2>&1 &
 MOCK_PID=$!
 
 sleep 2
 
-# 3. Start Language Server natively
+# 3. Start Language Server natively on port 8081
 echo "Starting language_server natively..."
 "$BIN_DIR/language_server" \
-    --subclient_type=hub \
-    --http_server_port=8081 \
-    --model_api_client_type=ccpa \
-    --cloud_code_endpoint="http://127.0.0.1:8083" \
-    --google_cloud_project="${GOOGLE_CLOUD_PROJECT:-second-test-project-393510}" \
-    --override_oauth_client_id="${OAUTH_CLIENT_ID:-}" \
-    --override_oauth_client_secret="${OAUTH_CLIENT_SECRET:-}" \
+    -server_port=8081 \
+    -cloud_code_endpoint="http://127.0.0.1:8083" \
     -csrf_token="${CSRF_TOKEN}" \
-    --local_chrome_headless=true \
-    --local_chrome_user_data_dir="$LS_CHROME_DIR" \
-    --app_data_dir="antigravity" \
-    --gemini_dir=".gemini" \
-    -standalone &
-
+    -app_data_dir="antigravity" \
+    -gemini_dir=".gemini" \
+    -standalone=true > /tmp/language_server.log 2>&1 &
 LS_PID=$!
 
 cleanup() {
@@ -55,4 +47,4 @@ cleanup() {
 }
 trap cleanup SIGINT SIGTERM EXIT
 
-wait "$LS_PID"
+wait "$MOCK_PID"
