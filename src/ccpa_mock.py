@@ -985,21 +985,20 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                 "homeDirUri": f"file://{home_dir}"
             }
             payload = json.dumps(doc).encode("utf-8")
-            is_grpc_req = "grpc" in ctype_raw or "x-grpc-web" in self.headers or is_enveloped
-            if is_grpc_req:
-                data_frame = b"\x00" + len(payload).to_bytes(4, "big") + payload
-                trailer = b"grpc-status: 0\r\n"
-                trailer_frame = b"\x80" + len(trailer).to_bytes(4, "big") + trailer
-                resp_body = data_frame + trailer_frame
-                resp_ctype = "application/grpc-web+json"
-            else:
-                resp_body = payload
-                resp_ctype = "application/json"
+            data_frame = b"\x00" + len(payload).to_bytes(4, "big") + payload
+            trailer = b"grpc-status: 0\r\nGrpc-Status: 0\r\ngrpc-message: OK\r\nGrpc-Message: OK\r\n"
+            trailer_frame = b"\x80" + len(trailer).to_bytes(4, "big") + trailer
+            resp_body = data_frame + trailer_frame
             
             self.send_response(200)
-            self.send_header("Content-Type", resp_ctype)
+            self.send_header("Content-Type", "application/grpc-web+json")
             self.send_header("Access-Control-Allow-Origin", self.headers.get("Origin", "*"))
             self.send_header("Access-Control-Allow-Credentials", "true")
+            self.send_header("Grpc-Status", "0")
+            self.send_header("grpc-status", "0")
+            self.send_header("Grpc-Message", "OK")
+            self.send_header("grpc-message", "OK")
+            self.send_header("Access-Control-Expose-Headers", "Content-Length,Content-Range,grpc-status,grpc-message,grpc-status-details-bin,connect-protocol-version,grpc-encoding,grpc-accept-encoding,Grpc-Status,Grpc-Message,Grpc-Status-Details-Bin")
             self.send_header("Content-Length", str(len(resp_body)))
             self.end_headers()
             self.wfile.write(resp_body)
