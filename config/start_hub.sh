@@ -22,20 +22,20 @@ python3 "$BIN_DIR/init_knowledge_graph.py" 2>/dev/null || true
 
 # 2. Start CCPA Mock Server (Primary Backend Service)
 echo "Starting CCPA Mock Server..."
-python3 "$BIN_DIR/ccpa_mock.py" > /tmp/ccpa_mock.log 2>&1 &
+python3 "$BIN_DIR/ccpa_mock.py" > /tmp/ccpa_mock.log 2>&1 < /dev/null &
 MOCK_PID=$!
 
-sleep 2
+sleep 1
 
 # 3. Start Language Server natively on port 8081
 echo "Starting language_server natively..."
-"$BIN_DIR/language_server" \
+nohup "$BIN_DIR/language_server" \
     -server_port=8081 \
     -cloud_code_endpoint="http://127.0.0.1:8083" \
     -csrf_token="${CSRF_TOKEN}" \
     -app_data_dir="antigravity" \
     -gemini_dir=".gemini" \
-    -standalone=true > /tmp/language_server.log 2>&1 &
+    -standalone=true > /tmp/language_server.log 2>&1 < /dev/null &
 LS_PID=$!
 
 cleanup() {

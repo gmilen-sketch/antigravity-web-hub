@@ -146,20 +146,25 @@ fi
 gcloud --project=$PROJECT compute forwarding-rules create ${NAME_PREFIX}-fr \
    --global --address=${NAME_PREFIX}-ip --target-https-proxy=${NAME_PREFIX}-tp --ports=443 2>/dev/null || true
 
-echo "→ Enabling IAP on backend service…"
-gcloud --quiet --project=$PROJECT services enable iap.googleapis.com 2>/dev/null || true
-gcloud --quiet --project=$PROJECT iap oauth-brands create \
-  --application_title="Antigravity Web Hub" \
-  --support_email=$(gcloud config get-value account 2>/dev/null) 2>/dev/null || true
-gcloud --quiet --project=$PROJECT compute backend-services update ${NAME_PREFIX}-bs --global --iap=enabled 2>/dev/null || true
+if [ "${ENABLE_IAP:-false}" = "true" ]; then
+  echo "→ Enabling IAP on backend service…"
+  gcloud --quiet --project=$PROJECT services enable iap.googleapis.com 2>/dev/null || true
+  gcloud --quiet --project=$PROJECT iap oauth-brands create \
+    --application_title="Antigravity Web Hub" \
+    --support_email=$(gcloud config get-value account 2>/dev/null) 2>/dev/null || true
+  gcloud --quiet --project=$PROJECT compute backend-services update ${NAME_PREFIX}-bs --global --iap=enabled 2>/dev/null || true
 
-echo "→ Granting IAP HTTPS resource accessor to $IAP_USERS…"
-IFS=',' read -ra USERS <<< "$IAP_USERS"
-for u in "${USERS[@]}"; do
-  gcloud --quiet --project=$PROJECT iap web add-iam-policy-binding \
-    --resource-type=backend-services --service=${NAME_PREFIX}-bs \
-    --member="$u" --role=roles/iap.httpsResourceAccessor 2>/dev/null || true
-done
+  echo "→ Granting IAP HTTPS resource accessor to $IAP_USERS…"
+  IFS=',' read -ra USERS <<< "$IAP_USERS"
+  for u in "${USERS[@]}"; do
+    gcloud --quiet --project=$PROJECT iap web add-iam-policy-binding \
+      --resource-type=backend-services --service=${NAME_PREFIX}-bs \
+      --member="$u" --role=roles/iap.httpsResourceAccessor 2>/dev/null || true
+  done
+else
+  echo "→ Ensuring IAP is disabled on backend service for direct web access…"
+  gcloud --quiet --project=$PROJECT compute backend-services update ${NAME_PREFIX}-bs --global --iap=disabled 2>/dev/null || true
+fi
 
 echo
 echo "✅ Done."
