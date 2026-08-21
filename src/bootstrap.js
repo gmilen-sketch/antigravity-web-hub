@@ -149,23 +149,43 @@
         supportsThoughtCirculation: true
       },
       {
-        label: 'Gemini 3.5 Pro',
-        modelOrAlias: { choice: { case: 'alias', value: 'gemini-3.5-pro' } },
+        label: 'Gemini 3.6 Flash',
+        modelOrAlias: { choice: { case: 'alias', value: 'gemini-3.6-flash' } },
         disabled: false,
         supportedMimeTypes: {},
         quotaInfo: { remaining: 1000, total: 1000 },
-        tagTitle: 'Complex Reasoning',
-        tagDescription: 'Deep architectural synthesis',
+        tagTitle: 'General Production',
+        tagDescription: 'Multimodal and coding agent tasks',
         supportsThoughtCirculation: true
       },
       {
-        label: 'Gemini 3.5 Flash',
-        modelOrAlias: { choice: { case: 'alias', value: 'gemini-3.5-flash' } },
+        label: 'Gemini 3.5 Flash Lite',
+        modelOrAlias: { choice: { case: 'alias', value: 'gemini-3.5-flash-lite' } },
         disabled: false,
         supportedMimeTypes: {},
         quotaInfo: { remaining: 1000, total: 1000 },
         tagTitle: 'High-Throughput',
-        tagDescription: 'Low-latency processing',
+        tagDescription: 'Low-latency extraction and routing',
+        supportsThoughtCirculation: true
+      },
+      {
+        label: 'Claude 3.7 Sonnet (Vertex AI)',
+        modelOrAlias: { choice: { case: 'alias', value: 'claude-3-7-sonnet' } },
+        disabled: false,
+        supportedMimeTypes: {},
+        quotaInfo: { remaining: 1000, total: 1000 },
+        tagTitle: 'Complex Reasoning',
+        tagDescription: 'Extended context and deep synthesis',
+        supportsThoughtCirculation: true
+      },
+      {
+        label: 'Claude Opus 5 (Vertex AI)',
+        modelOrAlias: { choice: { case: 'alias', value: 'claude-opus-5' } },
+        disabled: false,
+        supportedMimeTypes: {},
+        quotaInfo: { remaining: 1000, total: 1000 },
+        tagTitle: 'Deep Reasoning',
+        tagDescription: 'Large-scale architectural analysis',
         supportsThoughtCirculation: true
       }
     ],
@@ -175,7 +195,13 @@
         groups: [
           {
             groupName: 'Recommended',
-            modelLabels: ['Gemini 3.7 Flash', 'Gemini 3.5 Pro', 'Gemini 3.5 Flash']
+            modelLabels: [
+              'Gemini 3.7 Flash',
+              'Gemini 3.6 Flash',
+              'Gemini 3.5 Flash Lite',
+              'Claude 3.7 Sonnet (Vertex AI)',
+              'Claude Opus 5 (Vertex AI)'
+            ]
           }
         ]
       },
@@ -184,7 +210,13 @@
         groups: [
           {
             groupName: 'All Models',
-            modelLabels: ['Gemini 3.7 Flash', 'Gemini 3.5 Pro', 'Gemini 3.5 Flash']
+            modelLabels: [
+              'Gemini 3.7 Flash',
+              'Gemini 3.6 Flash',
+              'Gemini 3.5 Flash Lite',
+              'Claude 3.7 Sonnet (Vertex AI)',
+              'Claude Opus 5 (Vertex AI)'
+            ]
           }
         ]
       }
