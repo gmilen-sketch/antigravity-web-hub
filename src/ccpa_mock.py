@@ -502,6 +502,16 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         logging.info("%s - - %s" % (self.address_string(), format%args))
 
+    def do_OPTIONS(self):
+        self.send_response(204)
+        origin = self.headers.get("Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", origin)
+        self.send_header("Access-Control-Allow-Credentials", "true")
+        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE, HEAD")
+        self.send_header("Access-Control-Allow-Headers", "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,x-codeium-csrf-token,x-csrf-token,connect-protocol-version,x-grpc-web,x-user-agent,grpc-timeout")
+        self.send_header("Access-Control-Max-Age", "1728000")
+        self.end_headers()
+
     def forward_and_stream(self, path, method, headers, body):
         _server_ready.wait(timeout=12.0)
         url = f"http://127.0.0.1:8081{path}"
@@ -965,6 +975,37 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(final_body)
             return
 
+        # 0. Handle GetLocalUserInfo Interception
+        if "GetLocalUserInfo" in self.path or "getLocalUserInfo" in self.path:
+            import getpass
+            username = os.environ.get("USER") or getpass.getuser() or "admin_mgenchev_altostrat_com"
+            home_dir = os.environ.get("HOME") or f"/home/{username}"
+            doc = {
+                "username": username,
+                "homeDirUri": f"file://{home_dir}"
+            }
+            payload = json.dumps(doc).encode("utf-8")
+            is_grpc_req = "grpc" in ctype_raw or "x-grpc-web" in self.headers or is_enveloped
+            if is_grpc_req:
+                data_frame = b"\x00" + len(payload).to_bytes(4, "big") + payload
+                trailer = b"grpc-status: 0\r\n"
+                trailer_frame = b"\x80" + len(trailer).to_bytes(4, "big") + trailer
+                resp_body = data_frame + trailer_frame
+                resp_ctype = "application/grpc-web+json"
+            else:
+                resp_body = payload
+                resp_ctype = "application/json"
+            
+            self.send_response(200)
+            self.send_header("Content-Type", resp_ctype)
+            self.send_header("Access-Control-Allow-Origin", self.headers.get("Origin", "*"))
+            self.send_header("Access-Control-Allow-Credentials", "true")
+            self.send_header("Content-Length", str(len(resp_body)))
+            self.end_headers()
+            self.wfile.write(resp_body)
+            logging.info(f"GetLocalUserInfo handled successfully: {doc}")
+            return
+
         # 1. Handle GetUserStatus Interception
         if "GetUserStatus" in self.path or "getUserStatus" in self.path:
             status, resp_headers, resp_body = forward_request(self.path, "POST", self.headers, post_data)
@@ -1139,6 +1180,15 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
             "GetSlashCommands", "getSlashCommands",
             "SendUserCascadeMessage", "sendUserCascadeMessage",
             "StreamAgentStateUpdates", "streamAgentStateUpdates",
+            "JetboxSubscribeToSummaries", "jetboxSubscribeToSummaries",
+            "JetboxSubscribeToState", "jetboxSubscribeToState",
+            "ProjectUpdatesStream", "projectUpdatesStream",
+            "GetAgentScripts", "getAgentScripts",
+            "GetAllSkills", "getAllSkills",
+            "GetAllRules", "getAllRules",
+            "GetMendelFlags", "getMendelFlags",
+            "RecordAnalyticsEvent", "recordAnalyticsEvent",
+            "RecordError", "recordError",
             "FetchConversationAnnotations", "fetchConversationAnnotations",
             "UpdateConversationAnnotations", "updateConversationAnnotations",
             "GetCascade", "getCascade"
