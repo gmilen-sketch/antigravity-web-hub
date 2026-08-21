@@ -172,7 +172,13 @@ if command -v nginx >/dev/null 2>&1; then
   nginx -t && systemctl reload nginx || systemctl restart nginx
 fi
 
-# ---- 8. Systemd Service Configuration ----
+# ---- 8. Configure Nightly Dreaming & SQLite WAL Maintenance Crontabs ----
+echo "Configuring automatic SQLite WAL and Nightly Dreaming (23:50 UTC) crontab..."
+(sudo -u "$RUN_USER" crontab -l 2>/dev/null | grep -v "dreaming_engine.py" | grep -v "ensure_wal.py" || true; \
+ echo "* * * * * python3 $BIN_DIR/ensure_wal.py > /dev/null 2>&1"; \
+ echo "50 23 * * * python3 $BIN_DIR/knowledge_graph/dreaming_engine.py --hours 24 >> /tmp/dreaming.log 2>&1") | sudo -u "$RUN_USER" crontab -
+
+# ---- 9. Systemd Service Configuration ----
 sed "s/REPLACE_USER/$RUN_USER/g" config/antigravity-web.service \
   > /etc/systemd/system/antigravity-web.service
 install -m 0644 .env /etc/antigravity-web.env 2>/dev/null || true
