@@ -1,30 +1,13 @@
 #!/usr/bin/env python3
-"""
-FastMCP Server exposing Knowledge Graph Long-Term Memory tools to Antigravity agents.
-"""
-
 import os
 import sys
 import json
-import logging
 
-try:
-    from fastmcp import FastMCP
-except ImportError:
-    # Minimal fallback stub if fastmcp is imported before pip install completes
-    class FastMCP:
-        def __init__(self, name):
-            self.name = name
-        def tool(self):
-            def decorator(f):
-                return f
-            return decorator
-        def run(self):
-            print(f"FastMCP server {self.name} initialized.")
-
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from fastmcp import FastMCP
 from kg_engine import get_kg_engine
 
-mcp = FastMCP("knowledge_graph_mcp")
+mcp = FastMCP("knowledge_graph")
 
 @mcp.tool()
 def kg_search_entities(query: str, limit: int = 10) -> str:
@@ -35,7 +18,7 @@ def kg_search_entities(query: str, limit: int = 10) -> str:
 
 @mcp.tool()
 def kg_get_subgraph_context(target_id: str, max_hops: int = 2) -> str:
-    """Retrieve an ultra-compact (<500 tokens) prompt-ready context block for a target entity or concept."""
+    """Retrieve an ultra-compact prompt-ready context block for a target entity or concept."""
     engine = get_kg_engine()
     return engine.get_subgraph_context(target_id, max_hops=max_hops)
 
@@ -54,4 +37,4 @@ def kg_upsert_edge(source: str, target: str, relation: str = "relates_to", weigh
     return f"Successfully linked '{source}' --({relation})--> '{target}'."
 
 if __name__ == "__main__":
-    mcp.run()
+    mcp.run(transport="stdio")

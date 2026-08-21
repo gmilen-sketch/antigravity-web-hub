@@ -1,0 +1,47 @@
+{
+  "name": "antigravity-community-skills",
+  "version": "1.0.0",
+  "description": "100% Clean-Room Open-Source Skills Catalog for Antigravity Web Hub",
+  "skills": [
+    {
+      "name": "diagram-renderer",
+      "path": "skills/diagram-renderer/SKILL.md",
+      "tier": "Tier 1 Native"
+    },
+    {
+      "name": "finops-focus-auditor",
+      "path": "skills/finops-focus-auditor/SKILL.md",
+      "tier": "Tier 2 Adapter"
+    },
+    {
+      "name": "open-deep-researcher",
+      "path": "skills/open-deep-researcher/SKILL.md",
+      "tier": "Tier 2 Adapter"
+    },
+    {
+      "name": "parallel-task-orchestrator",
+      "path": "skills/parallel-task-orchestrator/SKILL.md",
+      "tier": "Tier 1 Native"
+    },
+    {
+      "name": "playwright-agent-browser",
+      "path": "skills/playwright-agent-browser/SKILL.md",
+      "tier": "Tier 2 Adapter"
+    },
+    {
+      "name": "six-hats-evaluator",
+      "path": "skills/six-hats-evaluator/SKILL.md",
+      "tier": "Tier 1 Native"
+    },
+    {
+      "name": "universal-solution-architect",
+      "path": "skills/universal-solution-architect/SKILL.md",
+      "tier": "Tier 1 Native"
+    },
+    {
+      "name": "universal-task-sync",
+      "path": "skills/universal-task-sync/SKILL.md",
+      "tier": "Tier 2 Adapter"
+    }
+  ]
+}
