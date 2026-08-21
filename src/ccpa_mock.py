@@ -11,16 +11,13 @@ import time
 import re
 import socket
 import threading
-import ssl
-import uuid
-import queue
 
 _server_ready = threading.Event()
 _server_ready.set()
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 
-PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", "second-test-project-393510")
+PROJECT_ID = os.environ.get("GOOGLE_CLOUD_PROJECT", "firsttestproject-343414")
 LOCATION = os.environ.get("GOOGLE_CLOUD_REGION", "us-central1")
 
 _token_cache = {"token": "", "expires_at": 0}
@@ -39,31 +36,6 @@ def get_cascade_event(cascade_id):
             evt.set()
             _cascade_events[cascade_id] = evt
         return _cascade_events[cascade_id]
-
-_conversation_states = {}
-_conversation_states_lock = threading.Lock()
-
-def get_or_create_conversation_state(cascade_id):
-    with _conversation_states_lock:
-        if cascade_id not in _conversation_states:
-            _conversation_states[cascade_id] = {
-                "steps": [],
-                "queues": []
-            }
-        return _conversation_states[cascade_id]
-
-def broadcast_agent_state_update(cascade_id, update_dict):
-    with _conversation_states_lock:
-        st = _conversation_states.get(cascade_id)
-        if not st:
-            return
-        frame_payload = json.dumps({"update": update_dict}).encode("utf-8")
-        frame = b"\x00" + len(frame_payload).to_bytes(4, "big") + frame_payload
-        for q in list(st["queues"]):
-            try:
-                q.put(frame)
-            except Exception:
-                pass
 
 def extract_cascade_id(body: bytes, is_json: bool) -> str:
     cascade_id = None
@@ -127,54 +99,6 @@ def get_adc_token(force: bool = False) -> str:
         logging.warning(f"Could not fetch GCE metadata token: {ex}")
 
     return ""
-
-def call_vertex_ai_generate_content(prompt_text: str, model_name: str = "gemini-3.7-flash") -> str:
-    """Calls Vertex AI generateContent directly to generate response for the user prompt."""
-    token = get_adc_token()
-    if not token:
-        return "I am connected and ready. (ADC credentials not found on host)."
-    
-    # Map model
-    model_id = "gemini-3.7-flash"
-    if "claude" in str(model_name).lower():
-        model_id = "claude-3-7-sonnet@20250219"
-    elif "3.6" in str(model_name).lower():
-        model_id = "gemini-3.6-flash"
-    elif "3.5" in str(model_name).lower():
-        model_id = "gemini-3.5-flash-lite"
-
-    url = f"https://{LOCATION}-aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/{LOCATION}/publishers/google/models/{model_id}:generateContent"
-    payload = {
-        "contents": [
-            {"role": "user", "parts": [{"text": prompt_text}]}
-        ],
-        "generationConfig": {
-            "temperature": 0.7,
-            "maxOutputTokens": 2048
-        }
-    }
-    
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {token}"
-        }
-    )
-    
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-            candidates = data.get("candidates", [])
-            if candidates:
-                parts = candidates[0].get("content", {}).get("parts", [])
-                if parts:
-                    return "".join(p.get("text", "") for p in parts)
-            return "Task completed successfully."
-    except Exception as e:
-        logging.error(f"Vertex AI generateContent failed: {e}")
-        return f"Hello from Antigravity Web! I have received your message: \"{prompt_text}\""
 
 
 
@@ -344,7 +268,7 @@ def _is_unset_enum(v):
 
 def forward_request(path, method, headers, body):
     _server_ready.wait(timeout=12.0)
-    url = f"https://127.0.0.1:8081{path}"
+    url = f"http://127.0.0.1:8081{path}"
     fw_headers = {}
     for k, v in headers.items():
         lk = k.lower()
@@ -356,8 +280,7 @@ def forward_request(path, method, headers, body):
     
     req = urllib.request.Request(url, data=body, headers=fw_headers, method=method)
     try:
-        ssl_ctx = ssl._create_unverified_context()
-        with urllib.request.urlopen(req, timeout=120, context=ssl_ctx) as response:
+        with urllib.request.urlopen(req, timeout=120) as response:
             resp_headers = {k: v for k, v in response.info().items()}
             resp_body = response.read()
             return response.status, resp_headers, resp_body
@@ -579,200 +502,9 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         logging.info("%s - - %s" % (self.address_string(), format%args))
 
-    def do_OPTIONS(self):
-        self.send_response(204)
-        origin = self.headers.get("Origin", "*")
-        self.send_header("Access-Control-Allow-Origin", origin)
-        self.send_header("Access-Control-Allow-Credentials", "true")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS, PUT, DELETE, HEAD")
-        self.send_header("Access-Control-Allow-Headers", "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,x-codeium-csrf-token,x-csrf-token,connect-protocol-version,x-grpc-web,x-user-agent,grpc-timeout")
-        self.send_header("Access-Control-Max-Age", "1728000")
-        self.end_headers()
-
-    def handle_stream_agent_state_updates(self, cascade_id):
-        st = get_or_create_conversation_state(cascade_id)
-        q = queue.Queue()
-        with _conversation_states_lock:
-            st["queues"].append(q)
-        
-        self.send_response(200)
-        ctype = "application/grpc-web+json" if "grpc" in self.headers.get("Content-Type", "") or "grpc" in self.headers.get("Accept", "") else "application/connect+json"
-        self.send_header("Content-Type", ctype)
-        self.send_header("Cache-Control", "no-cache")
-        origin = self.headers.get("Origin", "*")
-        self.send_header("Access-Control-Allow-Origin", origin)
-        self.send_header("Access-Control-Allow-Credentials", "true")
-        self.end_headers()
-
-        try:
-            # 1. Send initial snapshot
-            steps = list(st["steps"])
-            indices = list(range(len(steps)))
-            init_update = {
-                "conversationId": cascade_id,
-                "trajectoryId": f"traj-{cascade_id}",
-                "status": "CASCADE_RUN_STATUS_IDLE",
-                "fullyIdle": True,
-                "mainTrajectoryUpdate": {
-                    "metadata": {
-                        "workspaceUris": ["/workspace"]
-                    },
-                    "stepsUpdate": {
-                        "indices": indices,
-                        "steps": steps,
-                        "totalLength": len(steps)
-                    }
-                }
-            }
-            init_payload = json.dumps({"update": init_update}).encode("utf-8")
-            init_frame = b"\x00" + len(init_payload).to_bytes(4, "big") + init_payload
-            self.wfile.write(init_frame)
-            self.wfile.flush()
-
-            # 2. Keep stream open and listen for updates
-            while True:
-                try:
-                    frame = q.get(timeout=15.0)
-                    self.wfile.write(frame)
-                    self.wfile.flush()
-                except queue.Empty:
-                    # Send periodic empty heartbeat frame to maintain TCP session if needed
-                    pass
-        except (BrokenPipeError, ConnectionResetError):
-            logging.info(f"StreamAgentStateUpdates client disconnected for cascade {cascade_id}")
-        finally:
-            with _conversation_states_lock:
-                if q in st["queues"]:
-                    st["queues"].remove(q)
-
-    def handle_send_user_cascade_message(self, cascade_id, user_text, requested_model="gemini-3.7-flash"):
-        st = get_or_create_conversation_state(cascade_id)
-        step_idx = len(st["steps"])
-        
-        # 1. Append user step
-        user_step = {
-            "type": "CORTEX_STEP_TYPE_USER_INPUT",
-            "status": "CORTEX_STEP_STATUS_DONE",
-            "userInput": {
-                "userResponse": user_text,
-                "items": [{"chunk": {"text": user_text}}]
-            },
-            "metadata": {
-                "sourceTrajectoryStepInfo": {
-                    "cascadeId": cascade_id,
-                    "trajectoryId": f"traj-{cascade_id}",
-                    "stepIndex": step_idx
-                }
-            }
-        }
-        st["steps"].append(user_step)
-        
-        # 2. Emit running state update
-        steps = list(st["steps"])
-        broadcast_agent_state_update(cascade_id, {
-            "conversationId": cascade_id,
-            "trajectoryId": f"traj-{cascade_id}",
-            "status": "CASCADE_RUN_STATUS_RUNNING",
-            "fullyIdle": False,
-            "mainTrajectoryUpdate": {
-                "metadata": {"workspaceUris": ["/workspace"]},
-                "stepsUpdate": {
-                    "indices": list(range(len(steps))),
-                    "steps": steps,
-                    "totalLength": len(steps)
-                }
-            }
-        })
-
-        # 3. Background worker to call Vertex AI and stream response
-        def _run_agent_turn():
-            try:
-                planner_step_idx = len(st["steps"])
-                planner_step = {
-                    "type": "CORTEX_STEP_TYPE_PLANNER_RESPONSE",
-                    "status": "CORTEX_STEP_STATUS_RUNNING",
-                    "plannerResponse": {
-                        "response": "",
-                        "modifiedResponse": "",
-                        "thinking": "",
-                        "rawThinking": ""
-                    },
-                    "metadata": {
-                        "sourceTrajectoryStepInfo": {
-                            "cascadeId": cascade_id,
-                            "trajectoryId": f"traj-{cascade_id}",
-                            "stepIndex": planner_step_idx
-                        }
-                    }
-                }
-                st["steps"].append(planner_step)
-
-                # Call Vertex AI
-                response_text = call_vertex_ai_generate_content(user_text, requested_model)
-                
-                # Stream response in chunks
-                words = response_text.split(" ")
-                curr_text = ""
-                for i, w in enumerate(words):
-                    curr_text += (w if i == 0 else " " + w)
-                    planner_step["plannerResponse"]["response"] = curr_text
-                    planner_step["plannerResponse"]["modifiedResponse"] = curr_text
-                    if i % 3 == 0 or i == len(words) - 1:
-                        broadcast_agent_state_update(cascade_id, {
-                            "conversationId": cascade_id,
-                            "trajectoryId": f"traj-{cascade_id}",
-                            "status": "CASCADE_RUN_STATUS_RUNNING",
-                            "fullyIdle": False,
-                            "mainTrajectoryUpdate": {
-                                "metadata": {"workspaceUris": ["/workspace"]},
-                                "stepsUpdate": {
-                                    "indices": list(range(len(st["steps"]))),
-                                    "steps": list(st["steps"]),
-                                    "totalLength": len(st["steps"])
-                                }
-                            }
-                        })
-                        time.sleep(0.04)
-
-                planner_step["status"] = "CORTEX_STEP_STATUS_DONE"
-                broadcast_agent_state_update(cascade_id, {
-                    "conversationId": cascade_id,
-                    "trajectoryId": f"traj-{cascade_id}",
-                    "status": "CASCADE_RUN_STATUS_IDLE",
-                    "fullyIdle": True,
-                    "mainTrajectoryUpdate": {
-                        "metadata": {"workspaceUris": ["/workspace"]},
-                        "stepsUpdate": {
-                            "indices": list(range(len(st["steps"]))),
-                            "steps": list(st["steps"]),
-                            "totalLength": len(st["steps"])
-                        }
-                    }
-                })
-            except Exception as e:
-                logging.error(f"Error in agent turn: {e}")
-                broadcast_agent_state_update(cascade_id, {
-                    "conversationId": cascade_id,
-                    "trajectoryId": f"traj-{cascade_id}",
-                    "status": "CASCADE_RUN_STATUS_IDLE",
-                    "fullyIdle": True
-                })
-
-        threading.Thread(target=_run_agent_turn, daemon=True).start()
-
-        # Return unary response for SendUserCascadeMessage
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", "2")
-        origin = self.headers.get("Origin", "*")
-        self.send_header("Access-Control-Allow-Origin", origin)
-        self.send_header("Access-Control-Allow-Credentials", "true")
-        self.end_headers()
-        self.wfile.write(b"{}")
-
     def forward_and_stream(self, path, method, headers, body):
         _server_ready.wait(timeout=12.0)
-        url = f"https://127.0.0.1:8081{path}"
+        url = f"http://127.0.0.1:8081{path}"
         fw_headers = {}
         for k, v in headers.items():
             lk = k.lower()
@@ -786,8 +518,7 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
         # Use longer timeout for state streaming to avoid network/gateway errors
         timeout = 1800 if "StreamAgentStateUpdates" in path or "streamAgentStateUpdates" in path else 120
         try:
-            ssl_ctx = ssl._create_unverified_context()
-            with urllib.request.urlopen(req, timeout=timeout, context=ssl_ctx) as response:
+            with urllib.request.urlopen(req, timeout=timeout) as response:
                 self.send_response(response.status)
                 
                 # Check if the upstream response is chunked or lacks a Content-Length
@@ -836,31 +567,6 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(e.read())
         except Exception as e:
             logging.error(f"Error forwarding request to {url}: {e}")
-            if any(k in path for k in ("UpdateConversationAnnotations", "RecordError", "JetboxDeleteSummary", "JetboxWriteSummary", "RecordAnalyticsEvent")):
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", "2")
-                self.end_headers()
-                self.wfile.write(b"{}")
-                return
-            elif "SendUserCascadeMessage" in path:
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", "2")
-                self.end_headers()
-                self.wfile.write(b"{}")
-                return
-            elif "StreamAgentStateUpdates" in path:
-                self.send_response(200)
-                self.send_header("Content-Type", "application/grpc-web+json")
-                self.send_header("Transfer-Encoding", "chunked")
-                self.end_headers()
-                data_frame = b"\x00\x00\x00\x00\x02{}"
-                self.wfile.write(f"{len(data_frame):x}\r\n".encode('ascii'))
-                self.wfile.write(data_frame)
-                self.wfile.write(b"\r\n")
-                self.wfile.flush()
-                return
             self.send_response(502)
             self.end_headers()
             self.wfile.write(b"Gateway Error")
@@ -909,23 +615,23 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                 if any(w in msg_lower for w in ["virtual machine", "vm", "instances", "compute"]):
                     try:
                         res = subprocess.check_output(
-                            ["gcloud", "compute", "instances", "list", "--project=second-test-project-393510"],
+                            ["gcloud", "compute", "instances", "list", "--project=firsttestproject-343414"],
                             stderr=subprocess.STDOUT
                         ).decode("utf-8")
-                        output_text = f"Here are the active virtual machines in project `second-test-project-393510`:\n\n```text\n{res}\n```\n\nConnected to Antigravity Cloud Sandbox: http://34.107.158.143/."
+                        output_text = f"Here are the active virtual machines in project `firsttestproject-343414`:\n\n```text\n{res}\n```\n\nConnected to Antigravity Cloud Sandbox: https://antigravity.customertests.info/."
                     except Exception as ex:
                         output_text = f"Error executing gcloud compute instances list: {ex}"
                 elif any(w in msg_lower for w in ["dataset", "bigquery", "tables"]):
                     try:
                         res = subprocess.check_output(
-                            ["bq", "ls", "--project_id=second-test-project-393510"],
+                            ["bq", "ls", "--project_id=firsttestproject-343414"],
                             stderr=subprocess.STDOUT
                         ).decode("utf-8")
-                        output_text = f"Here are the BigQuery datasets in `second-test-project-393510`:\n\n```text\n{res}\n```"
+                        output_text = f"Here are the BigQuery datasets in `firsttestproject-343414`:\n\n```text\n{res}\n```"
                     except Exception as ex:
                         output_text = f"Error querying BigQuery: {ex}"
                 else:
-                    output_text = f"Antigravity Coding Agent received your request:\n> {user_msg}\n\nWorkspace active with Monaco editor and terminal at: http://34.107.158.143/."
+                    output_text = f"Antigravity Coding Agent received your request:\n> {user_msg}\n\nWorkspace active with Monaco editor and terminal at: https://antigravity.customertests.info/."
                 
                 resp_payload = {
                     "jsonrpc": "2.0",
@@ -968,7 +674,7 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
             logging.info(f"--- STREAM GENERATE CONTENT INTERCEPTED ---")
             
             token = get_adc_token()
-            if not token and not os.environ.get("ANTHROPIC_API_KEY"):
+            if not token:
                 self.send_response(500)
                 self.end_headers()
                 self.wfile.write(b"No ADC Token Available")
@@ -976,8 +682,6 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
 
             payload_bytes = post_data
             is_anthropic = False
-            model = "gemini-3.7-flash"
-            doc = {}
             try:
                 doc = json.loads(post_data.decode("utf-8"))
                 logging.info(f"Payload: {json.dumps(doc, indent=2)}")
@@ -990,6 +694,7 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                     model = active_ui_model
                     logging.info(f"Using model selected from active UI: {model}")
                 else:
+                    model = "gemini-3.7-flash"
                     req_model = doc.get("model") or doc.get("modelName") or doc.get("model_name")
                     if req_model:
                         model = map_model_name(req_model)
@@ -1026,10 +731,6 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                     if system_prompt:
                         anthropic_payload["system"] = system_prompt
                         
-                    anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
-                    if anthropic_api_key:
-                        anthropic_payload["model"] = model.split("@")[0].replace("claude-opus-5", "claude-3-opus-20240229").replace("claude-3-opus", "claude-3-opus-20240229").replace("claude-3-7-sonnet", "claude-3-7-sonnet-20250219")
-                        
                     payload_bytes = json.dumps(anthropic_payload).encode("utf-8")
                     logging.info(f"Forwarding Anthropic Messages payload for model: {model}")
                 else:
@@ -1059,33 +760,16 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
             except Exception as e:
                 logging.error(f"Failed to parse and clean streamGenerateContent payload: {e}")
 
-            anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
-            if is_anthropic and anthropic_api_key:
-                vertex_url = "https://api.anthropic.com/v1/messages"
-                req_headers = {
-                    "x-api-key": anthropic_api_key,
-                    "anthropic-version": "2023-06-01",
-                    "content-type": "application/json"
-                }
-            elif is_anthropic:
-                anthropic_location = os.environ.get("MCP_VERTEX_REGION", "us-east5")
-                if anthropic_location == "global":
-                    anthropic_location = "us-east5"
-                vertex_url = f"https://{anthropic_location}-aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/{anthropic_location}/publishers/anthropic/models/{model}:streamRawPredict"
-                req_headers = {
-                    "Authorization": f"Bearer {token}",
-                    "Content-Type": "application/json",
-                }
+            if is_anthropic:
+                anthropic_location = "global"
+                vertex_url = f"https://aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/global/publishers/anthropic/models/{model}:streamRawPredict"
             else:
+                # Use v1beta1 REST endpoint with 'global' location as verified working
                 vertex_url = f"https://aiplatform.googleapis.com/v1beta1/projects/{PROJECT_ID}/locations/global/publishers/google/models/{model}:streamGenerateContent?alt=sse"
-                req_headers = {
-                    "Authorization": f"Bearer {token}",
-                    "Content-Type": "application/json",
-                }
                 
-            logging.info(f"Forwarding stream to model endpoint: {vertex_url}")
+            logging.info(f"Forwarding stream to Vertex AI: {vertex_url}")
             
-            max_retries = 3
+            max_retries = 5
             backoff_base = 1.0
             attempt = 0
             resp = None
@@ -1096,49 +780,34 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                     req = urllib.request.Request(
                         vertex_url,
                         data=payload_bytes,
-                        headers=req_headers,
-                        method="POST",
-                    )
-                    resp = urllib.request.urlopen(req, timeout=120)
-                    break
-                except urllib.error.HTTPError as he:
-                    if he.code in (404, 403) and is_anthropic:
-                        logging.warning(f"Anthropic model {model} not enabled or unavailable on Vertex AI (HTTP {he.code}). Seamlessly falling back to gemini-3.7-flash...")
-                        is_anthropic = False
-                        fallback_model = "gemini-3.7-flash"
-                        vertex_url = f"https://aiplatform.googleapis.com/v1beta1/projects/{PROJECT_ID}/locations/global/publishers/google/models/{fallback_model}:streamGenerateContent?alt=sse"
-                        inner_gemini = doc.get("request", doc)
-                        allowed_keys = {"contents", "systemInstruction", "tools", "toolConfig", "generationConfig", "safetySettings"}
-                        cleaned_gemini = {k: v for k, v in inner_gemini.items() if k in allowed_keys}
-                        payload_bytes = json.dumps(cleaned_gemini).encode("utf-8")
-                        req_headers = {
+                        headers={
                             "Authorization": f"Bearer {token}",
                             "Content-Type": "application/json",
-                        }
-                        req = urllib.request.Request(vertex_url, data=payload_bytes, headers=req_headers, method="POST")
-                        resp = urllib.request.urlopen(req, timeout=120)
-                        break
-                    elif he.code in (401, 429, 500, 502, 503, 504) and attempt < max_retries:
+                        },
+                        method="POST",
+                    )
+                    resp = urllib.request.urlopen(req)
+                    break
+                except urllib.error.HTTPError as he:
+                    if he.code in (401, 403, 429, 500, 502, 503, 504) and attempt < max_retries:
                         sleep_time = backoff_base * (2 ** (attempt - 1))
-                        logging.warning(f"Model stream request returned HTTP {he.code}. Retrying in {sleep_time:.2f}s (attempt {attempt}/{max_retries})...")
+                        logging.warning(f"Vertex AI stream request returned HTTP {he.code}. Retrying in {sleep_time:.2f}s (attempt {attempt}/{max_retries})...")
                         time.sleep(sleep_time)
                         token = get_adc_token(force=True)
-                        req_headers["Authorization"] = f"Bearer {token}"
                     else:
-                        logging.error(f"Model stream HTTPError: {he.code} {he.reason}")
+                        logging.error(f"Vertex AI stream HTTPError: {he.code} {he.reason}")
                         try:
                             err_body = he.read().decode('utf-8', errors='ignore')
-                            logging.error(f"Error body: {err_body}")
+                            logging.error(f"Vertex AI error body: {err_body}")
                         except Exception:
                             pass
                         raise he
                 except Exception as ex:
                     if attempt < max_retries:
                         sleep_time = backoff_base * (2 ** (attempt - 1))
-                        logging.warning(f"Model stream request encountered exception: {ex}. Retrying in {sleep_time:.2f}s (attempt {attempt}/{max_retries})...")
+                        logging.warning(f"Vertex AI stream request encountered exception: {ex}. Retrying in {sleep_time:.2f}s (attempt {attempt}/{max_retries})...")
                         time.sleep(sleep_time)
                         token = get_adc_token(force=True)
-                        req_headers["Authorization"] = f"Bearer {token}"
                     else:
                         raise ex
 
@@ -1196,12 +865,12 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                                                 ]
                                             }
                                             wrapped = {"response": gemini_obj}
-                                            wrapped_bytes = f"data: {json.dumps(wrapped)}\n\n".encode("utf-8")
+                                            wrapped_bytes = f"data: {json.dumps(wrapped)}\n".encode("utf-8")
                                             write_chunk(wrapped_bytes)
                                     else:
                                         # Wrap standard Gemini payload under a top-level "response" object
                                         wrapped = {"response": obj}
-                                        wrapped_bytes = f"data: {json.dumps(wrapped)}\n\n".encode("utf-8")
+                                        wrapped_bytes = f"data: {json.dumps(wrapped)}\n".encode("utf-8")
                                         with open("/tmp/mocker_stream.log", "a") as f_log:
                                             f_log.write(f"WRAPPED: {json.dumps(wrapped)}\n")
                                         write_chunk(wrapped_bytes)
@@ -1209,6 +878,7 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                                 logging.error(f"Failed to parse and wrap SSE chunk: {parse_err}. Original line: {line}")
                                 with open("/tmp/mocker_stream.log", "a") as f_log:
                                     f_log.write(f"PARSE_ERR: {parse_err}. Line: {line!r}\n")
+                                # Forward original line as fallback
                                 write_chunk(line)
                         else:
                             with open("/tmp/mocker_stream.log", "a") as f_log:
@@ -1295,36 +965,6 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(final_body)
             return
 
-        # 0. Handle GetLocalUserInfo Interception
-        if "GetLocalUserInfo" in self.path or "getLocalUserInfo" in self.path:
-            import getpass
-            username = os.environ.get("USER") or getpass.getuser() or "admin_mgenchev_altostrat_com"
-            home_dir = os.environ.get("HOME") or f"/home/{username}"
-            doc = {
-                "username": username,
-                "homeDirUri": f"file://{home_dir}"
-            }
-            payload = json.dumps(doc).encode("utf-8")
-            data_frame = b"\x00" + len(payload).to_bytes(4, "big") + payload
-            trailer = b"grpc-status: 0\r\nGrpc-Status: 0\r\ngrpc-message: OK\r\nGrpc-Message: OK\r\n"
-            trailer_frame = b"\x80" + len(trailer).to_bytes(4, "big") + trailer
-            resp_body = data_frame + trailer_frame
-            
-            self.send_response(200)
-            self.send_header("Content-Type", "application/grpc-web+json")
-            self.send_header("Access-Control-Allow-Origin", self.headers.get("Origin", "*"))
-            self.send_header("Access-Control-Allow-Credentials", "true")
-            self.send_header("Grpc-Status", "0")
-            self.send_header("grpc-status", "0")
-            self.send_header("Grpc-Message", "OK")
-            self.send_header("grpc-message", "OK")
-            self.send_header("Access-Control-Expose-Headers", "Content-Length,Content-Range,grpc-status,grpc-message,grpc-status-details-bin,connect-protocol-version,grpc-encoding,grpc-accept-encoding,Grpc-Status,Grpc-Message,Grpc-Status-Details-Bin")
-            self.send_header("Content-Length", str(len(resp_body)))
-            self.end_headers()
-            self.wfile.write(resp_body)
-            logging.info(f"GetLocalUserInfo handled successfully: {doc}")
-            return
-
         # 1. Handle GetUserStatus Interception
         if "GetUserStatus" in self.path or "getUserStatus" in self.path:
             status, resp_headers, resp_body = forward_request(self.path, "POST", self.headers, post_data)
@@ -1352,8 +992,6 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                         }
                     }
                 else:
-                    doc.pop("code", None)
-                    doc.pop("message", None)
                     us_obj = doc.setdefault("userStatus", {})
                     if isinstance(us_obj, dict):
                         us_obj["cascadeModelConfigData"] = build_cascade_model_config_data()
@@ -1478,42 +1116,10 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                 else:
                     logging.warning("Could not extract cascade_id from StartCascade request.")
             else:
-                logging.warning(f"StartCascade forwarded returned status {status}. Providing direct mock StartCascadeResponse...")
-                if not cascade_id:
-                    cascade_id = str(uuid.uuid4())
-                
-                # Ensure conversation directory and WAL database exist
-                conv_dir = os.path.expanduser("~/.gemini/antigravity/conversations")
-                os.makedirs(conv_dir, exist_ok=True)
-                db_path = os.path.join(conv_dir, f"{cascade_id}.db")
-                try:
-                    import sqlite3
-                    conn = sqlite3.connect(db_path)
-                    cursor = conn.cursor()
-                    cursor.execute("PRAGMA journal_mode=WAL;")
-                    cursor.execute("CREATE TABLE IF NOT EXISTS trajectory_meta (trajectory_id TEXT, created_at INTEGER, updated_at INTEGER);")
-                    cursor.execute("INSERT OR REPLACE INTO trajectory_meta VALUES (?, ?, ?);", (cascade_id, int(time.time()), int(time.time())))
-                    conn.commit()
-                    conn.close()
-                except Exception as ex:
-                    logging.error(f"Failed to create direct cascade database: {ex}")
-
-                # Return valid StartCascadeResponse
-                resp_obj = {"cascadeId": cascade_id}
-                new_payload = json.dumps(resp_obj).encode("utf-8")
-                if "grpc" in self.headers.get("Content-Type", ""):
-                    data_frame = b"\x00" + len(new_payload).to_bytes(4, "big") + new_payload
-                    trailer = b"grpc-status: 0\r\n"
-                    trailer_frame = b"\x80" + len(trailer).to_bytes(4, "big") + trailer
-                    resp_body = data_frame + trailer_frame
-                    resp_headers = {"Content-Type": "application/grpc-web+json"}
-                else:
-                    resp_body = new_payload
-                    resp_headers = {"Content-Type": "application/json"}
-                status = 200
-
-                event = get_cascade_event(cascade_id)
-                if event:
+                logging.warning(f"StartCascade forwarded but returned status {status}")
+                if cascade_id:
+                    # Set the event anyway to avoid infinite blocking of any waiters
+                    event = get_cascade_event(cascade_id)
                     event.set()
 
             # Send response back to client
@@ -1531,15 +1137,6 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
             "GetSlashCommands", "getSlashCommands",
             "SendUserCascadeMessage", "sendUserCascadeMessage",
             "StreamAgentStateUpdates", "streamAgentStateUpdates",
-            "JetboxSubscribeToSummaries", "jetboxSubscribeToSummaries",
-            "JetboxSubscribeToState", "jetboxSubscribeToState",
-            "ProjectUpdatesStream", "projectUpdatesStream",
-            "GetAgentScripts", "getAgentScripts",
-            "GetAllSkills", "getAllSkills",
-            "GetAllRules", "getAllRules",
-            "GetMendelFlags", "getMendelFlags",
-            "RecordAnalyticsEvent", "recordAnalyticsEvent",
-            "RecordError", "recordError",
             "FetchConversationAnnotations", "fetchConversationAnnotations",
             "UpdateConversationAnnotations", "updateConversationAnnotations",
             "GetCascade", "getCascade"
@@ -1547,50 +1144,44 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
         is_cascade_req = any(endpoint in self.path for endpoint in cascade_endpoints)
         if is_cascade_req:
             body = post_data
+            
+            # Extract cascade_id and wait on its event before forwarding
             cascade_id = extract_cascade_id(body, is_json)
-            if not cascade_id:
-                cascade_id = "default-cascade"
+            if cascade_id:
+                logging.info(f"Intercepted {self.path} for cascade {cascade_id}. Waiting for DB readiness event...")
+                event = get_cascade_event(cascade_id)
+                if not event.wait(timeout=5.0):
+                    logging.warning(f"Timed out waiting for cascade {cascade_id} readiness in {self.path}")
+                else:
+                    logging.info(f"Cascade {cascade_id} is ready. Forwarding {self.path}.")
 
-            if "StreamAgentStateUpdates" in self.path or "streamAgentStateUpdates" in self.path:
-                logging.info(f"Serving native StreamAgentStateUpdates for cascade {cascade_id}")
-                self.handle_stream_agent_state_updates(cascade_id)
-                return
-
-            if "SendUserCascadeMessage" in self.path or "sendUserCascadeMessage" in self.path:
-                logging.info(f"Serving native SendUserCascadeMessage for cascade {cascade_id}")
-                try:
+            try:
+                if is_json:
                     is_env_json = len(body) >= 5 and body[0] in (0x00, 0x80)
-                    plen = int.from_bytes(body[1:5], "big") if is_env_json else len(body)
-                    payload = body[5:5+plen] if is_env_json else body
-                    doc = json.loads(payload.decode("utf-8")) if is_json else {}
-                except Exception:
-                    doc = {}
-                
-                # Extract text
-                user_text = ""
-                items = doc.get("items", [])
-                for it in items:
-                    if isinstance(it, dict):
-                        chunk = it.get("chunk", {})
-                        if isinstance(chunk, dict) and "text" in chunk:
-                            user_text += chunk["text"] + " "
-                        elif "text" in it:
-                            user_text += it["text"] + " "
-                user_text = user_text.strip() or doc.get("userResponse") or "Hello"
-                model_name = doc.get("requestedModel") or "gemini-3.7-flash"
-                self.handle_send_user_cascade_message(cascade_id, user_text, model_name)
-                return
-
-            if any(k in self.path for k in ("UpdateConversationAnnotations", "RecordError", "RecordAnalyticsEvent", "JetboxWriteSummary", "JetboxDeleteSummary", "GetSlashCommands")):
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json")
-                self.send_header("Content-Length", "2")
-                origin = self.headers.get("Origin", "*")
-                self.send_header("Access-Control-Allow-Origin", origin)
-                self.send_header("Access-Control-Allow-Credentials", "true")
-                self.end_headers()
-                self.wfile.write(b"{}")
-                return
+                    if is_env_json:
+                        plen = int.from_bytes(body[1:5], "big")
+                        payload = body[5:5+plen]
+                    else:
+                        payload = body
+                        
+                    doc = json.loads(payload.decode("utf-8"))
+                    needs_model_injection = any(endpoint in self.path for endpoint in ("GetSlashCommands", "getSlashCommands", "SendUserCascadeMessage", "sendUserCascadeMessage"))
+                    if needs_model_injection:
+                        modified = inject_model_into_json_doc(doc, is_start_cascade=False)
+                    else:
+                        modified = False
+                    
+                    if modified:
+                        new_payload = json.dumps(doc).encode("utf-8")
+                        if is_env_json:
+                            body = bytes([body[0]]) + len(new_payload).to_bytes(4, "big") + new_payload
+                        else:
+                            body = new_payload
+                        logging.info(f"JSON request modified. Injected DEFAULT_MODEL into {self.path}.")
+                elif is_enveloped or is_raw_proto:
+                    pass
+            except Exception as e:
+                logging.error(f"Binary proto model injection failed for {self.path}: {e}")
 
             self.forward_and_stream(self.path, "POST", self.headers, body)
             return
