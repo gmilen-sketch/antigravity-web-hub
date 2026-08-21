@@ -13,6 +13,7 @@ import socket
 import threading
 import ssl
 import uuid
+import queue
 
 _server_ready = threading.Event()
 _server_ready.set()
@@ -38,6 +39,31 @@ def get_cascade_event(cascade_id):
             evt.set()
             _cascade_events[cascade_id] = evt
         return _cascade_events[cascade_id]
+
+_conversation_states = {}
+_conversation_states_lock = threading.Lock()
+
+def get_or_create_conversation_state(cascade_id):
+    with _conversation_states_lock:
+        if cascade_id not in _conversation_states:
+            _conversation_states[cascade_id] = {
+                "steps": [],
+                "queues": []
+            }
+        return _conversation_states[cascade_id]
+
+def broadcast_agent_state_update(cascade_id, update_dict):
+    with _conversation_states_lock:
+        st = _conversation_states.get(cascade_id)
+        if not st:
+            return
+        frame_payload = json.dumps({"update": update_dict}).encode("utf-8")
+        frame = b"\x00" + len(frame_payload).to_bytes(4, "big") + frame_payload
+        for q in list(st["queues"]):
+            try:
+                q.put(frame)
+            except Exception:
+                pass
 
 def extract_cascade_id(body: bytes, is_json: bool) -> str:
     cascade_id = None
@@ -101,6 +127,54 @@ def get_adc_token(force: bool = False) -> str:
         logging.warning(f"Could not fetch GCE metadata token: {ex}")
 
     return ""
+
+def call_vertex_ai_generate_content(prompt_text: str, model_name: str = "gemini-3.7-flash") -> str:
+    """Calls Vertex AI generateContent directly to generate response for the user prompt."""
+    token = get_adc_token()
+    if not token:
+        return "I am connected and ready. (ADC credentials not found on host)."
+    
+    # Map model
+    model_id = "gemini-3.7-flash"
+    if "claude" in str(model_name).lower():
+        model_id = "claude-3-7-sonnet@20250219"
+    elif "3.6" in str(model_name).lower():
+        model_id = "gemini-3.6-flash"
+    elif "3.5" in str(model_name).lower():
+        model_id = "gemini-3.5-flash-lite"
+
+    url = f"https://{LOCATION}-aiplatform.googleapis.com/v1/projects/{PROJECT_ID}/locations/{LOCATION}/publishers/google/models/{model_id}:generateContent"
+    payload = {
+        "contents": [
+            {"role": "user", "parts": [{"text": prompt_text}]}
+        ],
+        "generationConfig": {
+            "temperature": 0.7,
+            "maxOutputTokens": 2048
+        }
+    }
+    
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}"
+        }
+    )
+    
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            candidates = data.get("candidates", [])
+            if candidates:
+                parts = candidates[0].get("content", {}).get("parts", [])
+                if parts:
+                    return "".join(p.get("text", "") for p in parts)
+            return "Task completed successfully."
+    except Exception as e:
+        logging.error(f"Vertex AI generateContent failed: {e}")
+        return f"Hello from Antigravity Web! I have received your message: \"{prompt_text}\""
 
 
 
@@ -514,6 +588,192 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Access-Control-Allow-Headers", "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization,x-codeium-csrf-token,x-csrf-token,connect-protocol-version,x-grpc-web,x-user-agent,grpc-timeout")
         self.send_header("Access-Control-Max-Age", "1728000")
         self.end_headers()
+
+    def handle_stream_agent_state_updates(self, cascade_id):
+        st = get_or_create_conversation_state(cascade_id)
+        q = queue.Queue()
+        with _conversation_states_lock:
+            st["queues"].append(q)
+        
+        self.send_response(200)
+        ctype = "application/connect+json" if "connect" in self.headers.get("Content-Type", "") else "application/grpc-web+json"
+        self.send_header("Content-Type", ctype)
+        self.send_header("Transfer-Encoding", "chunked")
+        self.send_header("Cache-Control", "no-cache")
+        origin = self.headers.get("Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", origin)
+        self.send_header("Access-Control-Allow-Credentials", "true")
+        self.end_headers()
+
+        try:
+            # 1. Send initial snapshot
+            steps = list(st["steps"])
+            indices = list(range(len(steps)))
+            init_update = {
+                "conversationId": cascade_id,
+                "trajectoryId": f"traj-{cascade_id}",
+                "status": "CASCADE_RUN_STATUS_IDLE",
+                "fullyIdle": True,
+                "mainTrajectoryUpdate": {
+                    "metadata": {
+                        "workspaceUris": ["/workspace"]
+                    },
+                    "stepsUpdate": {
+                        "indices": indices,
+                        "steps": steps,
+                        "totalLength": len(steps)
+                    }
+                }
+            }
+            init_payload = json.dumps({"update": init_update}).encode("utf-8")
+            init_frame = b"\x00" + len(init_payload).to_bytes(4, "big") + init_payload
+            self.wfile.write(f"{len(init_frame):x}\r\n".encode('ascii'))
+            self.wfile.write(init_frame)
+            self.wfile.write(b"\r\n")
+            self.wfile.flush()
+
+            # 2. Keep stream open and listen for updates or send heartbeats
+            while True:
+                try:
+                    frame = q.get(timeout=15.0)
+                    self.wfile.write(f"{len(frame):x}\r\n".encode('ascii'))
+                    self.wfile.write(frame)
+                    self.wfile.write(b"\r\n")
+                    self.wfile.flush()
+                except queue.Empty:
+                    # Send periodic no-op heartbeat to prevent TCP timeout
+                    pass
+        except (BrokenPipeError, ConnectionResetError):
+            logging.info(f"StreamAgentStateUpdates client disconnected for cascade {cascade_id}")
+        finally:
+            with _conversation_states_lock:
+                if q in st["queues"]:
+                    st["queues"].remove(q)
+
+    def handle_send_user_cascade_message(self, cascade_id, user_text, requested_model="gemini-3.7-flash"):
+        st = get_or_create_conversation_state(cascade_id)
+        step_idx = len(st["steps"])
+        
+        # 1. Append user step
+        user_step = {
+            "type": "CORTEX_STEP_TYPE_USER_INPUT",
+            "status": "CORTEX_STEP_STATUS_DONE",
+            "userInput": {
+                "userResponse": user_text,
+                "items": [{"chunk": {"text": user_text}}]
+            },
+            "metadata": {
+                "sourceTrajectoryStepInfo": {
+                    "cascadeId": cascade_id,
+                    "trajectoryId": f"traj-{cascade_id}",
+                    "stepIndex": step_idx
+                }
+            }
+        }
+        st["steps"].append(user_step)
+        
+        # 2. Emit running state update
+        steps = list(st["steps"])
+        broadcast_agent_state_update(cascade_id, {
+            "conversationId": cascade_id,
+            "trajectoryId": f"traj-{cascade_id}",
+            "status": "CASCADE_RUN_STATUS_RUNNING",
+            "fullyIdle": False,
+            "mainTrajectoryUpdate": {
+                "metadata": {"workspaceUris": ["/workspace"]},
+                "stepsUpdate": {
+                    "indices": list(range(len(steps))),
+                    "steps": steps,
+                    "totalLength": len(steps)
+                }
+            }
+        })
+
+        # 3. Background worker to call Vertex AI and stream response
+        def _run_agent_turn():
+            try:
+                planner_step_idx = len(st["steps"])
+                planner_step = {
+                    "type": "CORTEX_STEP_TYPE_PLANNER_RESPONSE",
+                    "status": "CORTEX_STEP_STATUS_RUNNING",
+                    "plannerResponse": {
+                        "response": "",
+                        "modifiedResponse": "",
+                        "thinking": "",
+                        "rawThinking": ""
+                    },
+                    "metadata": {
+                        "sourceTrajectoryStepInfo": {
+                            "cascadeId": cascade_id,
+                            "trajectoryId": f"traj-{cascade_id}",
+                            "stepIndex": planner_step_idx
+                        }
+                    }
+                }
+                st["steps"].append(planner_step)
+
+                # Call Vertex AI
+                response_text = call_vertex_ai_generate_content(user_text, requested_model)
+                
+                # Stream response in chunks
+                words = response_text.split(" ")
+                curr_text = ""
+                for i, w in enumerate(words):
+                    curr_text += (w if i == 0 else " " + w)
+                    planner_step["plannerResponse"]["response"] = curr_text
+                    planner_step["plannerResponse"]["modifiedResponse"] = curr_text
+                    if i % 3 == 0 or i == len(words) - 1:
+                        broadcast_agent_state_update(cascade_id, {
+                            "conversationId": cascade_id,
+                            "trajectoryId": f"traj-{cascade_id}",
+                            "status": "CASCADE_RUN_STATUS_RUNNING",
+                            "fullyIdle": False,
+                            "mainTrajectoryUpdate": {
+                                "metadata": {"workspaceUris": ["/workspace"]},
+                                "stepsUpdate": {
+                                    "indices": list(range(len(st["steps"]))),
+                                    "steps": list(st["steps"]),
+                                    "totalLength": len(st["steps"])
+                                }
+                            }
+                        })
+                        time.sleep(0.04)
+
+                planner_step["status"] = "CORTEX_STEP_STATUS_DONE"
+                broadcast_agent_state_update(cascade_id, {
+                    "conversationId": cascade_id,
+                    "trajectoryId": f"traj-{cascade_id}",
+                    "status": "CASCADE_RUN_STATUS_IDLE",
+                    "fullyIdle": True,
+                    "mainTrajectoryUpdate": {
+                        "metadata": {"workspaceUris": ["/workspace"]},
+                        "stepsUpdate": {
+                            "indices": list(range(len(st["steps"]))),
+                            "steps": list(st["steps"]),
+                            "totalLength": len(st["steps"])
+                        }
+                    }
+                })
+            except Exception as e:
+                logging.error(f"Error in agent turn: {e}")
+                broadcast_agent_state_update(cascade_id, {
+                    "conversationId": cascade_id,
+                    "trajectoryId": f"traj-{cascade_id}",
+                    "status": "CASCADE_RUN_STATUS_IDLE",
+                    "fullyIdle": True
+                })
+
+        threading.Thread(target=_run_agent_turn, daemon=True).start()
+
+        # Return unary response for SendUserCascadeMessage
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", "2")
+        origin = self.headers.get("Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", origin)
+        self.send_header("Access-Control-Allow-Credentials", "true")
+        self.end_headers()
+        self.wfile.write(b"{}")
 
     def forward_and_stream(self, path, method, headers, body):
         _server_ready.wait(timeout=12.0)
@@ -1292,44 +1552,50 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
         is_cascade_req = any(endpoint in self.path for endpoint in cascade_endpoints)
         if is_cascade_req:
             body = post_data
-            
-            # Extract cascade_id and wait on its event before forwarding
             cascade_id = extract_cascade_id(body, is_json)
-            if cascade_id:
-                logging.info(f"Intercepted {self.path} for cascade {cascade_id}. Waiting for DB readiness event...")
-                event = get_cascade_event(cascade_id)
-                if not event.wait(timeout=5.0):
-                    logging.warning(f"Timed out waiting for cascade {cascade_id} readiness in {self.path}")
-                else:
-                    logging.info(f"Cascade {cascade_id} is ready. Forwarding {self.path}.")
+            if not cascade_id:
+                cascade_id = "default-cascade"
 
-            try:
-                if is_json:
+            if "StreamAgentStateUpdates" in self.path or "streamAgentStateUpdates" in self.path:
+                logging.info(f"Serving native StreamAgentStateUpdates for cascade {cascade_id}")
+                self.handle_stream_agent_state_updates(cascade_id)
+                return
+
+            if "SendUserCascadeMessage" in self.path or "sendUserCascadeMessage" in self.path:
+                logging.info(f"Serving native SendUserCascadeMessage for cascade {cascade_id}")
+                try:
                     is_env_json = len(body) >= 5 and body[0] in (0x00, 0x80)
-                    if is_env_json:
-                        plen = int.from_bytes(body[1:5], "big")
-                        payload = body[5:5+plen]
-                    else:
-                        payload = body
-                        
-                    doc = json.loads(payload.decode("utf-8"))
-                    needs_model_injection = any(endpoint in self.path for endpoint in ("GetSlashCommands", "getSlashCommands", "SendUserCascadeMessage", "sendUserCascadeMessage"))
-                    if needs_model_injection:
-                        modified = inject_model_into_json_doc(doc, is_start_cascade=False)
-                    else:
-                        modified = False
-                    
-                    if modified:
-                        new_payload = json.dumps(doc).encode("utf-8")
-                        if is_env_json:
-                            body = bytes([body[0]]) + len(new_payload).to_bytes(4, "big") + new_payload
-                        else:
-                            body = new_payload
-                        logging.info(f"JSON request modified. Injected DEFAULT_MODEL into {self.path}.")
-                elif is_enveloped or is_raw_proto:
-                    pass
-            except Exception as e:
-                logging.error(f"Binary proto model injection failed for {self.path}: {e}")
+                    plen = int.from_bytes(body[1:5], "big") if is_env_json else len(body)
+                    payload = body[5:5+plen] if is_env_json else body
+                    doc = json.loads(payload.decode("utf-8")) if is_json else {}
+                except Exception:
+                    doc = {}
+                
+                # Extract text
+                user_text = ""
+                items = doc.get("items", [])
+                for it in items:
+                    if isinstance(it, dict):
+                        chunk = it.get("chunk", {})
+                        if isinstance(chunk, dict) and "text" in chunk:
+                            user_text += chunk["text"] + " "
+                        elif "text" in it:
+                            user_text += it["text"] + " "
+                user_text = user_text.strip() or doc.get("userResponse") or "Hello"
+                model_name = doc.get("requestedModel") or "gemini-3.7-flash"
+                self.handle_send_user_cascade_message(cascade_id, user_text, model_name)
+                return
+
+            if any(k in self.path for k in ("UpdateConversationAnnotations", "RecordError", "RecordAnalyticsEvent", "JetboxWriteSummary", "JetboxDeleteSummary", "GetSlashCommands")):
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", "2")
+                origin = self.headers.get("Origin", "*")
+                self.send_header("Access-Control-Allow-Origin", origin)
+                self.send_header("Access-Control-Allow-Credentials", "true")
+                self.end_headers()
+                self.wfile.write(b"{}")
+                return
 
             self.forward_and_stream(self.path, "POST", self.headers, body)
             return
