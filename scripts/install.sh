@@ -196,8 +196,8 @@ if command -v nginx >/dev/null 2>&1; then
   if [ -f "/var/www/html/index.html" ] && ! grep -q "bootstrap.js" /var/www/html/index.html; then
     sed -i 's|<head>|<head><script src="/bootstrap.js"></script>|' /var/www/html/index.html
   fi
-  chmod -R 0755 /var/www/html
-  install -m 0644 config/nginx.conf /etc/nginx/sites-available/default
+  install -m 0644 config/nginx.conf /etc/nginx/conf.d/antigravity-web.conf
+  rm -f /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default 2>/dev/null || true
   nginx -t && systemctl reload nginx || systemctl restart nginx
 fi
 
