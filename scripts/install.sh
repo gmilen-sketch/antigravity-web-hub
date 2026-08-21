@@ -154,16 +154,16 @@ if [ -d "skills" ]; then
   echo "Installing Community Skills catalog..."
   for skill_path in skills/*; do
     if [ -d "$skill_path" ]; then
-      skill_name=\$(basename "$skill_path")
+      skill_name=$(basename "$skill_path")
       for dest in "$RUN_HOME/.gemini/config/skills/$skill_name" \
                   "$RUN_HOME/.gemini/antigravity/skills/$skill_name" \
                   "$RUN_HOME/.gemini/skills/$skill_name" \
                   "$RUN_HOME/.agents/skills/$skill_name" \
                   "/mnt/data/projects/.agents/skills/$skill_name"; do
-        mkdir -p "\$(dirname "$dest")"
+        mkdir -p "$(dirname "$dest")"
         rm -rf "$dest"
         cp -r "$skill_path" "$dest"
-        chown -R "$RUN_USER:$RUN_USER" "$dest"
+        chown -R "$RUN_USER:$RUN_USER" "$dest" 2>/dev/null || true
       done
     fi
   done

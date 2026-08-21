@@ -25,8 +25,15 @@ rm -f "${TAR_ARCHIVE}"
 tar --exclude='.git' --exclude='venv' --exclude='node_modules' -czf "${TAR_ARCHIVE}" -C "${REPO_ROOT}" .
 
 # Step 2: Transfer package and run clean-room destroy & installer
-echo "🚚 [2/4] Uploading deployment package to ${VM_NAME}..."
+echo "🚚 [2/4] Uploading deployment package and runner to ${VM_NAME}..."
 gcloud compute scp "${TAR_ARCHIVE}" "${VM_NAME}:/tmp/hub.tar.gz" \
+  --zone="${ZONE}" \
+  --project="${PROJECT_ID}" \
+  --account="${SSH_USER}" \
+  --tunnel-through-iap \
+  --scp-flag="-o StrictHostKeyChecking=no"
+
+gcloud compute scp "${SCRIPT_DIR}/remote_runner.sh" "${VM_NAME}:/tmp/remote_runner.sh" \
   --zone="${ZONE}" \
   --project="${PROJECT_ID}" \
   --account="${SSH_USER}" \
@@ -40,22 +47,7 @@ gcloud compute ssh "${VM_NAME}" \
   --account="${SSH_USER}" \
   --tunnel-through-iap \
   --ssh-flag="-o StrictHostKeyChecking=no" \
-  --command='
-set -euo pipefail
-echo "==> 1. Stopping and killing any existing services..."
-sudo systemctl stop antigravity-web.service 2>/dev/null || true
-pkill -9 -f "language_server" 2>/dev/null || true
-pkill -9 -f "ccpa_mock.py" 2>/dev/null || true
-rm -rf /tmp/ls-chrome-data /tmp/antigravity-web-hub
-
-echo "==> 2. Unpacking clean deployment archive..."
-mkdir -p /tmp/antigravity-web-hub
-tar -xzf /tmp/hub.tar.gz -C /tmp/antigravity-web-hub
-
-echo "==> 3. Running scripts/install.sh with sudo -E..."
-cd /tmp/antigravity-web-hub
-sudo -E bash scripts/install.sh
-'
+  --command="bash /tmp/remote_runner.sh"
 
 echo "✅ Remote deployment completed successfully."
 
@@ -190,7 +182,7 @@ async function verify() {
   const screenshot = await send('Page.captureScreenshot', { format: 'png' });
   const scPath = '/usr/local/google/home/mgenchev/.gemini/jetski/brain/dc82200c-f596-42b7-8ba0-0e25321e9cd2/antigravity_e2e_verified.png';
   fs.writeFileSync(scPath, Buffer.from(screenshot.data, 'base64'));
-  console.log('🎉 [PASS] E2E Verification Complete! Screenshot saved.');
+  console.log('🎉 [PASS] E2E Verification Complete! Screenshot saved to antigravity_e2e_verified.png');
   console.log('============================================================');
   console.log('🎉 DEPLOYMENT & VERIFICATION PIPELINE COMPLETE: 100% SUCCESS');
   console.log('============================================================');
