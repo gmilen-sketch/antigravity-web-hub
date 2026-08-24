@@ -54,18 +54,38 @@ echo "✅ Remote deployment completed successfully."
 # Step 3: Automated End-to-End Verification via Headless Chrome CDP
 echo "🧪 [4/4] Polling Load Balancer Health Check & Running E2E Automated Verification..."
 
-# Wait for LB health check to confirm 200 OK
+# Wait for LB health check to confirm 200 OK or 302 (IAP OAuth redirect)
 for i in {1..15}; do
   status_code=$(curl -s -o /dev/null -w "%{http_code}" "http://${LB_IP}/" || echo "000")
-  if [ "$status_code" = "200" ]; then
-    echo "Load Balancer is healthy (HTTP 200 OK after ${i} checks)."
+  if [ "$status_code" = "200" ] || [ "$status_code" = "302" ]; then
+    echo "Load Balancer is healthy (HTTP ${status_code} after ${i} checks)."
     break
   fi
   echo "Waiting for Load Balancer health check convergence (status: ${status_code}, attempt ${i}/15)..."
   sleep 2
 done
 
-# Step 4: Run Node.js CDP verification
-export LB_IP
+# Step 4: Open background IAP port-forward for Chrome CDP verification
+LOCAL_PORT=18080
+pkill -f "18080:localhost:8080" 2>/dev/null || true
+gcloud compute ssh "${VM_NAME}" \
+  --zone="${ZONE}" \
+  --project="${PROJECT_ID}" \
+  --account="${SSH_USER}" \
+  --tunnel-through-iap \
+  --ssh-flag="-o StrictHostKeyChecking=no" \
+  --ssh-flag="-L ${LOCAL_PORT}:localhost:8080" \
+  --ssh-flag="-N" &
+TUNNEL_PID=$!
+sleep 4
+
+cleanup_tunnel() {
+  kill -TERM "$TUNNEL_PID" 2>/dev/null || true
+}
+trap cleanup_tunnel EXIT
+
+# Step 5: Run Node.js CDP verification against local tunnel endpoint
+export LB_IP="127.0.0.1:${LOCAL_PORT}"
 node "${SCRIPT_DIR}/verify_e2e.js"
+
 

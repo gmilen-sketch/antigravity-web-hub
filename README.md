@@ -39,8 +39,8 @@ Auxiliary agent tools are refactored into standard **Model Context Protocol (MCP
   4. Predicts and attaches associative cross-session semantic edges.
   5. Atomically regenerates the `/dev/shm/` RAM cache.
 
-### 5. ⚡ Compute-Optimized `c2-standard-8` Infrastructure
-- Sized by default to **`c2-standard-8`** (8 vCPUs, 32 GB RAM, 3.8 GHz Turbo Intel Xeon) for rapid Go `language_server` AST compilation, sub-second MCP JSON-RPC dispatch, and high-concurrency 8-worker Nginx reverse proxy routing.
+### 5. ⚡ Compute-Optimized `c2-standard-16` Infrastructure
+- Sized by default to **`c2-standard-16`** (16 vCPUs, 64 GB RAM, 3.8 GHz Turbo Intel Xeon) for rapid Go `language_server` AST compilation, sub-second MCP JSON-RPC dispatch, and high-concurrency 16-worker Nginx reverse proxy routing.
 
 ### 6. 🚀 1-Click Cleanroom Destroy & Deploy Pipeline
 - Automated script (`scripts/deploy_and_verify.sh`): Executes full service teardown, VM software bootstrapping, Nginx configuration, and automated headless Chrome CDP browser verification with live prompt submission.
@@ -54,7 +54,7 @@ Auxiliary agent tools are refactored into standard **Model Context Protocol (MCP
 
 **Antigravity Web Hub** is an optimized, security-hardened, and production-ready distribution of Google's [Antigravity (AGY)](https://antigravity.google/) web platform tailored for cloud environments. It transforms Antigravity from a desktop-centric CLI and local GUI tool into a persistent, multi-user web-accessible workspace. 
 
-Running on a headless Google Cloud Platform (GCP) Compute-Optimized VM (`c2-standard-8`), the Web Hub serves Antigravity’s Single Page Application (SPA) to remote teams, protected by an Identity-Aware Proxy (IAP) and a GCP Classic HTTPS Load Balancer with Google-managed SSL.
+Running on a headless Google Cloud Platform (GCP) Compute-Optimized VM (`c2-standard-16`), the Web Hub serves Antigravity’s Single Page Application (SPA) to remote teams, protected by an Identity-Aware Proxy (IAP) and a GCP Classic HTTPS Load Balancer with Google-managed SSL.
 
 ---
 

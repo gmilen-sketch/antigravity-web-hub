@@ -24,6 +24,10 @@ set -a; . ./.env; set +a
 # Ensure system group nobody exists for init_google initialization on Debian GCE VMs
 groupadd nobody 2>/dev/null || true
 
+# Ensure GRTE dynamic linker symlink exists for Google3 binaries on standard Debian/Ubuntu GCE VMs
+mkdir -p /usr/grte/v5/lib64 2>/dev/null || true
+ln -sf /lib64/ld-linux-x86-64.so.2 /usr/grte/v5/lib64/ld-linux-x86-64.so.2 2>/dev/null || true
+
 RUN_USER="${SUDO_USER:-$USER}"
 RUN_HOME=$(getent passwd "$RUN_USER" | cut -d: -f6)
 
@@ -40,24 +44,32 @@ mkdir -p "$BIN_DIR" "$RUN_HOME/.gemini/config" "$RUN_HOME/.agents" /mnt/data/pro
 chown -R "$RUN_USER:$RUN_USER" "$RUN_HOME/.gemini" "$RUN_HOME/.agents" /mnt/data/projects 2>/dev/null || true
 
 if [ -f "$REPO_ROOT/bin/language_server" ]; then
-  echo "Installing language_server from repository bin/..."
-  install -o "$RUN_USER" -g "$RUN_USER" -m 0755 "$REPO_ROOT/bin/language_server" "$BIN_DIR/language_server"
+  echo "Installing language_server from repository package..."
+  cp "$REPO_ROOT/bin/language_server" "$BIN_DIR/language_server"
+  chmod 0755 "$BIN_DIR/language_server"
+  chown "$RUN_USER:$RUN_USER" "$BIN_DIR/language_server"
+elif [ -f "/tmp/working_language_server" ]; then
+  echo "Installing language_server from /tmp/working_language_server..."
+  cp "/tmp/working_language_server" "$BIN_DIR/language_server"
+  chmod 0755 "$BIN_DIR/language_server"
+  chown "$RUN_USER:$RUN_USER" "$BIN_DIR/language_server"
 elif [ -f "$BIN_DIR/language_server" ]; then
-  echo "Existing language_server found at $BIN_DIR/language_server."
+  echo "Valid standalone language_server found at $BIN_DIR/language_server."
 else
   echo "Downloading official Antigravity binary from Google CDN..."
   mkdir -p /tmp/antigravity_dl
-  curl -s -o /tmp/antigravity_dl/Antigravity.tar.gz https://edgedl.me.gvt1.com/edgedl/release2/j0qc3/antigravity/stable/1.16.5-6703236727046144/linux-x64/Antigravity.tar.gz
+  curl -sSL -o /tmp/antigravity_dl/Antigravity.tar.gz https://edgedl.me.gvt1.com/edgedl/release2/j0qc3/antigravity/stable/1.16.5-6703236727046144/linux-x64/Antigravity.tar.gz
   tar -xzf /tmp/antigravity_dl/Antigravity.tar.gz -C /tmp/antigravity_dl Antigravity/resources/app/extensions/antigravity/bin/language_server_linux_x64
   mv /tmp/antigravity_dl/Antigravity/resources/app/extensions/antigravity/bin/language_server_linux_x64 "$BIN_DIR/language_server"
   chmod 0755 "$BIN_DIR/language_server"
+  chown "$RUN_USER:$RUN_USER" "$BIN_DIR/language_server"
   rm -rf /tmp/antigravity_dl
-  echo "Extracted language_server binary to $BIN_DIR/language_server"
+  echo "Extracted official language_server binary to $BIN_DIR/language_server"
 fi
 
 # ---- 2. System dependencies & Python deps -----------------------------------
-echo "Installing system package dependencies (python3-pip, python3-venv, nginx, nodejs, npm)..."
-apt-get update -qq && apt-get install -y -qq python3-pip python3-venv nginx nodejs npm curl ca-certificates
+echo "Installing system package dependencies (python3-pip, python3-venv, nginx, nodejs, npm, unzip)..."
+apt-get update -qq && apt-get install -y -qq python3-pip python3-venv nginx nodejs npm curl ca-certificates unzip
 
 echo "Installing Python FastMCP & AI dependencies..."
 pip install --break-system-packages -r requirements.txt || true
@@ -177,11 +189,25 @@ if [ -f "config/jetski_state.pbtxt" ]; then
   chown "$RUN_USER:$RUN_USER" "$RUN_HOME/.gemini/antigravity/jetski_state.pbtxt" "$BIN_DIR/jetski_state.pbtxt"
 fi
 
-# ---- 7. Configure Nginx Reverse Proxy & Bootstrap Bridge ----
+# ---- 7. Configure Nginx Reverse Proxy & Static Web App ----
 if command -v nginx >/dev/null 2>&1; then
+  echo "Installing static Web App assets to /var/www/html/..."
   mkdir -p /var/www/html
+  if [ -f "$REPO_ROOT/assets/agyhub_ui_bundle.zip" ]; then
+    python3 -m zipfile -e "$REPO_ROOT/assets/agyhub_ui_bundle.zip" /var/www/html/
+  elif [ -f "assets/agyhub_ui_bundle.zip" ]; then
+    python3 -m zipfile -e "assets/agyhub_ui_bundle.zip" /var/www/html/
+  elif [ -f "$REPO_ROOT/assets/jetbox_ui_bundle.zip" ]; then
+    python3 -m zipfile -e "$REPO_ROOT/assets/jetbox_ui_bundle.zip" /var/www/html/
+  elif [ -f "assets/jetbox_ui_bundle.zip" ]; then
+    python3 -m zipfile -e "assets/jetbox_ui_bundle.zip" /var/www/html/
+  fi
   install -m 0644 src/bootstrap.js /var/www/html/bootstrap.js
-  install -m 0644 config/nginx.conf /etc/nginx/sites-available/default
+  if [ -f "/var/www/html/index.html" ] && ! grep -q "bootstrap.js" /var/www/html/index.html; then
+    sed -i 's|<head>|<head><script src="/bootstrap.js"></script>|' /var/www/html/index.html
+  fi
+  install -m 0644 config/nginx.conf /etc/nginx/conf.d/antigravity-web.conf
+  rm -f /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default 2>/dev/null || true
   nginx -t && systemctl reload nginx || systemctl restart nginx
 fi
 

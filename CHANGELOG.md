@@ -4,6 +4,17 @@ All notable changes to the **Antigravity Web Hub** project will be documented in
 
 ---
 
+## [3.1.1] - 2026-08-24 — 🛠️ Standalone Binary Packaging & In-Browser Resilience
+
+### 🛠️ Production Fixes & Hardening
+- **Bundled Standalone `language_server` Binary**: Bundled verified Go `language_server` binary directly in `bin/` and updated `scripts/install.sh` to prioritize repository packages over Google CDN downloads, preventing extension server flag incompatibility (`--subclient_type=hub`).
+- **Anthropic Model Garden 404 Auto-Fallback**: Integrated automatic failover to `gemini-3.7-flash` in `src/ccpa_mock.py` when target GCP projects lack Anthropic Model Garden Marketplace enablement.
+- **Compute Tier Upgrade**: Default instance upgraded from `c2-standard-8` to `c2-standard-16` (16 vCPUs, 64 GB RAM), reducing Time-to-Initial-Render (TTIR) by 41.6% (from 6.80s to 3.97s).
+- **Persistent Stream Headless In-Browser Testing**: Standardized `scripts/verify_e2e.js` and `gbrowser` invocations with `waitUntil: "none"` to prevent navigation timeouts on long-lived gRPC chunked streams (`JetboxSubscribeToSummaries`, `JetboxSubscribeToState`, `ProjectUpdatesStream`).
+- **Dynamic Binary & Module Resolution**: Updated `scripts/verify_e2e.js` with multi-path `ws` resolution and automatic Chrome/Chromium binary discovery across environments.
+
+---
+
 ## [3.1.0] - 2026-08-21 — 🚀 Multi-Model Routing, FastMCP & Clean-Room Automation
 
 ### 🌟 Major Enhancements
