@@ -1,13 +1,45 @@
-const WebSocket = require('/tmp/ws_test/node_modules/ws');
+let WebSocket;
+try {
+  WebSocket = require('ws');
+} catch (e) {
+  try {
+    WebSocket = require('/tmp/ws_test/node_modules/ws');
+  } catch (e2) {
+    try {
+      WebSocket = require('/usr/lib/node_modules/ws');
+    } catch (e3) {
+      WebSocket = require(require('path').join(__dirname, '../node_modules/ws'));
+    }
+  }
+}
 const http = require('http');
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 const fs = require('fs');
 
 const LB_IP = process.env.LB_IP || '34.107.158.143';
 
+function findChrome() {
+  const candidates = [
+    'google-chrome',
+    'google-chrome-stable',
+    'chromium',
+    'chromium-browser',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium'
+  ];
+  for (const c of candidates) {
+    try {
+      execSync(`which ${c}`, { stdio: 'ignore' });
+      return c;
+    } catch (err) {}
+  }
+  return 'google-chrome';
+}
+
 async function verify() {
+  const chromeBin = findChrome();
   const profileDir = '/tmp/clean-profile-' + Date.now();
-  const chrome = spawn('google-chrome', [
+  const chrome = spawn(chromeBin, [
     '--headless=new',
     '--no-sandbox',
     '--disable-gpu',

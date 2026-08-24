@@ -19,7 +19,7 @@ if [ -n "$DETECTED_ZONE" ]; then
   VM_ZONE="$DETECTED_ZONE"
 fi
 
-VM_MACHINE_TYPE="${VM_MACHINE_TYPE:-c2-standard-8}"
+VM_MACHINE_TYPE="${VM_MACHINE_TYPE:-c2-standard-16}"
 DATA_DISK_GB="${DATA_DISK_GB:-100}"
 
 REGION=$(echo "$VM_ZONE" | cut -d- -f1,2)
