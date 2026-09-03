@@ -659,11 +659,14 @@ var defaultMcpStates = [
             activeTrajectoryId: activeCid,
             sidebarSections: [
               {
-                uri: 'second-test-project',
+                uri: 'workspace-second-test-project',
                 label: 'second-test-project',
                 sectionKind: {
-                  case: 'projectSection',
-                  value: {}
+                  case: 'workspaceSection',
+                  value: {
+                    workspaceUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project',
+                    folderUris: ['file:///home/admin_mgenchev_altostrat_com/second-test-project']
+                  }
                 },
                 displayState: {
                   isCollapsed: false
