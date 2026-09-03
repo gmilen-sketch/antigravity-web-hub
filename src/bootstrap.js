@@ -25,10 +25,10 @@
     'hasAuthToken': 'true',
     'isAuthenticated': 'true',
     'antigravity_selected_model': '354',
-    'selectedWorkspaceUri': 'file:///home/admin_mgenchev_altostrat_com',
-    'openProjects': JSON.stringify(['file:///home/admin_mgenchev_altostrat_com']),
-    'recentProjects': JSON.stringify(['file:///home/admin_mgenchev_altostrat_com']),
-    'lastOpenedWorkspace': 'file:///home/admin_mgenchev_altostrat_com'
+    'selectedWorkspaceUri': 'file:///home/admin_mgenchev_altostrat_com/second-test-project',
+    'openProjects': JSON.stringify(['file:///home/admin_mgenchev_altostrat_com/second-test-project']),
+    'recentProjects': JSON.stringify(['file:///home/admin_mgenchev_altostrat_com/second-test-project']),
+    'lastOpenedWorkspace': 'file:///home/admin_mgenchev_altostrat_com/second-test-project'
   };
 
   var listeners = new Set();
@@ -491,6 +491,19 @@
       stepId++;
     });
 
+  var defaultProject = {
+    projectId: 'second-test-project',
+    name: 'second-test-project',
+    rootUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project',
+    settings: {
+      artifactReviewMode: 2, // 2 = TURBO ("Always Proceed")
+      browserJsExecutionPolicy: 4, // 4 = TURBO ("Always run")
+      autoExecutionPolicy: 2, // 2 = AUTO / EAGER
+      cascadeCommandsAutoExecution: 'EAGER',
+      sandboxMode: true
+    }
+  };
+
     summariesMap[s.id] = {
       summary: s.summary,
       stepCount: stepsList.length,
@@ -500,13 +513,16 @@
       createdTime: s.createdTime,
       lastModifiedTime: s.lastModifiedTime,
       trajectoryType: 0,
-      workspaces: [{ workspaceUri: 'file:///home/admin_mgenchev_altostrat_com' }]
+      projectId: 'second-test-project',
+      workspaces: [{ workspaceUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project' }]
     };
 
     trajectoriesMap[s.id] = {
       trajectoryId: s.id,
       cascadeId: s.id,
       trajectoryType: 0,
+      projectId: 'second-test-project',
+      workspaces: [{ workspaceUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project' }],
       steps: stepsList
     };
   });
@@ -890,10 +906,22 @@ var defaultMcpStates = [
         return makeGrpcWeb({ username: 'admin_mgenchev_altostrat_com', homeDirUri: 'file:///home/admin_mgenchev_altostrat_com' });
       }
       if (url.indexOf('ReadProject') !== -1 || url.indexOf('readProject') !== -1) {
-        return makeGrpcWeb({ project: { projectId: 'outside-of-project', name: 'Outside of Project', rootUri: 'file:///home/admin_mgenchev_altostrat_com' } });
+        return makeGrpcWeb({ project: defaultProject });
       }
       if (url.indexOf('GetCascadeProject') !== -1 || url.indexOf('getCascadeProject') !== -1) {
-        return makeGrpcWeb({ project: { projectId: 'outside-of-project', name: 'Outside of Project', rootUri: 'file:///home/admin_mgenchev_altostrat_com' } });
+        return makeGrpcWeb({ project: defaultProject });
+      }
+      if (url.indexOf('ListProjects') !== -1 || url.indexOf('listProjects') !== -1 || url.indexOf('GetAllProjects') !== -1 || url.indexOf('getAllProjects') !== -1 || url.indexOf('GetProjects') !== -1 || url.indexOf('getProjects') !== -1) {
+        return makeGrpcWeb({ projects: [defaultProject] });
+      }
+      if (url.indexOf('GetProjectSettings') !== -1 || url.indexOf('getProjectSettings') !== -1) {
+        return makeGrpcWeb({ settings: defaultProject.settings });
+      }
+      if (url.indexOf('UpdateProjectSettings') !== -1 || url.indexOf('updateProjectSettings') !== -1) {
+        return makeGrpcWeb({ settings: defaultProject.settings });
+      }
+      if (url.indexOf('GetProjectState') !== -1 || url.indexOf('getProjectState') !== -1) {
+        return makeGrpcWeb({ project: defaultProject });
       }
       if (url.indexOf('GetMendelFlags') !== -1 || url.indexOf('getMendelFlags') !== -1) {
         return makeGrpcWeb({ flags: [] });
