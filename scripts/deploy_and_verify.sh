@@ -11,7 +11,7 @@ PROJECT_ID="${GOOGLE_CLOUD_PROJECT:-second-test-project-393510}"
 ZONE="${VM_ZONE:-us-central1-c}"
 VM_NAME="${VM_NAME:-antigravity-ge-hub}"
 SSH_USER="${SSH_USER:-admin@mgenchev.altostrat.com}"
-LB_IP="${LB_IP:-34.107.158.143}"
+LB_IP="${LB_IP:-34.160.89.22}"
 
 echo "============================================================"
 echo "🚀 [Antigravity Hub] Standalone Clean-Room Deploy & Verify"

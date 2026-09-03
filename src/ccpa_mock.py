@@ -129,60 +129,47 @@ def read_request_body(handler) -> bytes:
 
 def map_model_name(requested_model_from_payload):
     if not requested_model_from_payload:
-        return "gemini-3.7-flash"
+        return "gemini-3.8-flash"
     req_str = str(requested_model_from_payload)
     req_lower = req_str.lower()
     
-    # 1. Claude Fable / Haiku (enum 340, 1272)
-    if "340" in req_str or "1272" in req_str or "haiku" in req_lower or "fable" in req_lower:
-        return "claude-fable-5"
-        
-    # 2. Claude Opus (enum 290, 291, 1279)
-    if "290" in req_str or "291" in req_str or "1279" in req_str or "opus" in req_lower:
-        if "4.7" in req_lower:
-            return "claude-opus-4-7"
-        return "claude-opus-5"
-        
-    # 3. Claude Sonnet (enum 333, 334, 281, 282)
-    if "333" in req_str or "334" in req_str or "281" in req_str or "282" in req_str or "claude" in req_lower or "sonnet" in req_lower:
-        if "3.5" in req_lower or "281" in req_str:
-            return "claude-3-5-sonnet-v2@20241022"
-        return "claude-3-7-sonnet@20250219"
-        
-    # 4. Gemini 3.7 Flash (enum 352, 353, 1003, 1004)
+    # 1. Gemini 3.8 Flash (enum 354, 355, 1005, or "3.8")
+    if "354" in req_str or "355" in req_str or "1005" in req_str or "3.8" in req_lower:
+        return "gemini-3.8-flash"
+
+    # 2. Gemini 3.7 Flash (enum 352, 353, 1003, 1004, or "3.7")
     if "352" in req_str or "353" in req_str or "3.7" in req_lower:
         return "gemini-3.7-flash"
         
-    # 5. Gemini 3.6 Flash (enum 350, 1001)
+    # 3. Gemini 3.6 Flash (enum 350, 1001, or "3.6")
     if "350" in req_str or "1001" in req_str or "3.6" in req_lower:
         return "gemini-3.6-flash"
         
-    # 6. Gemini 3.5 Flash Lite (enum 330, 344)
+    # 4. Gemini 3.5 Flash Lite (enum 330, 344)
     if "330" in req_str or "344" in req_str or "lite" in req_lower or "light" in req_lower:
         return "gemini-3.5-flash-lite"
         
-    # 7. Gemini 3.5 Pro (enum 246, 326, 331, 327)
+    # 5. Gemini 3.5 Pro (enum 246, 326, 331, 327)
     if "246" in req_str or "326" in req_str or "331" in req_str or "pro" in req_lower:
         return "gemini-3.5-pro"
         
-    # 8. Gemini 3.5 Flash (enum 348, 1000)
+    # 6. Gemini 3.5 Flash (enum 348, 1000)
     if "348" in req_str or "1000" in req_str or "3.5" in req_lower:
         return "gemini-3.5-flash"
         
-    return "gemini-3.7-flash"
+    return "gemini-3.8-flash"
 
 PORT = 8083
 
-DEFAULT_MODEL_ENUM = 352
-DEFAULT_MODEL_NAME = "MODEL_GOOGLE_GEMINI_RIFTRUNNER_THINKING_LOW"
+DEFAULT_MODEL_ENUM = 354
+DEFAULT_MODEL_NAME = "MODEL_GOOGLE_GEMINI_3_8_FLASH"
 
 DROPDOWN_MODELS = [
-    ("Gemini 3.7 Flash",              352),  # MODEL_GOOGLE_GEMINI_RIFTRUNNER_THINKING_LOW
-    ("Gemini 3.6 Flash",              350),  # MODEL_GOOGLE_GEMINI_INFINITYJET
-    ("Gemini 3.5 Flash Lite",         330),  # MODEL_GOOGLE_GEMINI_2_5_FLASH_LITE
-    ("Claude 3.7 Sonnet (Vertex AI)", 333),  # MODEL_CLAUDE_4_5_SONNET
-    ("Claude Opus 5 (Vertex AI)",     290),  # MODEL_CLAUDE_4_OPUS
-    ("Claude Fable 5 (Next-Gen)",     340),  # MODEL_CLAUDE_4_5_HAIKU
+    ("Gemini 3.8 Flash",      354),  # MODEL_GOOGLE_GEMINI_3_8_FLASH (Recommended)
+    ("Gemini 3.7 Flash",      352),  # MODEL_GOOGLE_GEMINI_RIFTRUNNER_THINKING_LOW
+    ("Gemini 3.6 Flash",      350),  # MODEL_GOOGLE_GEMINI_INFINITYJET
+    ("Gemini 3.5 Flash Lite", 330),  # MODEL_GOOGLE_GEMINI_2_5_FLASH_LITE
+    ("Gemini 3.5 Pro",        246),  # MODEL_GOOGLE_GEMINI_2_5_PRO
 ]
 
 GEMINI_SUPPORTED_MIME_TYPES = {
