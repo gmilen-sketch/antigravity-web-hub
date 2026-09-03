@@ -496,28 +496,6 @@
     projectId: 'second-test-project',
     name: 'second-test-project',
     rootUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project',
-    projectResources: {
-      resources: [
-        {
-          type: {
-            case: 'localFolder',
-            value: {
-              folderUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project'
-            }
-          }
-        }
-      ]
-    },
-    environments: {
-      environments: [
-        {
-          id: 'env-default',
-          name: 'Local',
-          isLocal: true,
-          type: 0
-        }
-      ]
-    },
     settings: {
       artifactReviewMode: 2, // 2 = TURBO ("Always Proceed")
       browserJsExecutionPolicy: 4, // 4 = TURBO ("Always run")
@@ -537,13 +515,7 @@
       lastModifiedTime: s.lastModifiedTime,
       trajectoryType: 0,
       projectId: 'second-test-project',
-      workspaces: [{ workspaceUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project' }],
-      trajectoryMetadata: {
-        projectId: 'second-test-project',
-        environmentId: 'env-default',
-        workspaceUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project',
-        workspaceUris: ['file:///home/admin_mgenchev_altostrat_com/second-test-project']
-      }
+      workspaces: [{ workspaceUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project' }]
     };
 
     trajectoriesMap[s.id] = {
@@ -552,12 +524,6 @@
       trajectoryType: 0,
       projectId: 'second-test-project',
       workspaces: [{ workspaceUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project' }],
-      trajectoryMetadata: {
-        projectId: 'second-test-project',
-        environmentId: 'env-default',
-        workspaceUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project',
-        workspaceUris: ['file:///home/admin_mgenchev_altostrat_com/second-test-project']
-      },
       steps: stepsList
     };
   });
@@ -659,13 +625,13 @@ var defaultMcpStates = [
             activeTrajectoryId: activeCid,
             sidebarSections: [
               {
-                uri: 'workspace-second-test-project',
-                label: 'second-test-project',
+                uri: 'workspace-keynote-demos',
+                label: 'Keynote Demonstrations',
                 sectionKind: {
                   case: 'workspaceSection',
                   value: {
-                    workspaceUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project',
-                    folderUris: ['file:///home/admin_mgenchev_altostrat_com/second-test-project']
+                    workspaceUri: 'file:///home/admin_mgenchev_altostrat_com',
+                    folderUris: ['file:///home/admin_mgenchev_altostrat_com']
                   }
                 },
                 displayState: {
@@ -844,14 +810,7 @@ var defaultMcpStates = [
       }
 
       if (url.indexOf('ProjectUpdatesStream') !== -1 || url.indexOf('projectUpdatesStream') !== -1) {
-        return makeStreamWithInitialMessage({
-          update: {
-            case: 'projectList',
-            value: {
-              projectIds: ['second-test-project']
-            }
-          }
-        });
+        return makeStreamWithInitialMessage({ updates: [] });
       }
       if (url.indexOf('GetTokenBase') !== -1 || url.indexOf('getTokenBase') !== -1) {
         return makeGrpcWeb({
@@ -946,12 +905,6 @@ var defaultMcpStates = [
       }
       if (url.indexOf('GetLocalUserInfo') !== -1) {
         return makeGrpcWeb({ username: 'admin_mgenchev_altostrat_com', homeDirUri: 'file:///home/admin_mgenchev_altostrat_com' });
-      }
-      if (url.indexOf('IsProjectsEnabledInternally') !== -1 || url.indexOf('isProjectsEnabledInternally') !== -1) {
-        return makeGrpcWeb({ enabled: true });
-      }
-      if (url.indexOf('ResolveFolder') !== -1 || url.indexOf('resolveFolder') !== -1) {
-        return makeGrpcWeb({ resourceType: 0 });
       }
       if (url.indexOf('ReadProject') !== -1 || url.indexOf('readProject') !== -1) {
         return makeGrpcWeb({ project: defaultProject });
