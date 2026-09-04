@@ -1010,8 +1010,18 @@ var defaultMcpStates = [
         return window._origNativeFetch.apply(this, args);
       }
 
+      if (url.indexOf('IsProjectsEnabledInternally') !== -1 || url.indexOf('isProjectsEnabledInternally') !== -1) {
+        return makeGrpcWeb({ enabled: true });
+      }
       if (url.indexOf('ProjectUpdatesStream') !== -1 || url.indexOf('projectUpdatesStream') !== -1) {
-        return makeStreamWithInitialMessage({ updates: [] });
+        return makeStreamWithInitialMessage({
+          update: {
+            case: 'projectList',
+            value: {
+              projectIds: ['second-test-project']
+            }
+          }
+        });
       }
       if (url.indexOf('GetTokenBase') !== -1 || url.indexOf('getTokenBase') !== -1) {
         return makeGrpcWeb({
