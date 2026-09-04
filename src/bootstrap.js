@@ -212,6 +212,46 @@
     });
   }
 
+  var defaultProject = {
+    id: 'second-test-project',
+    projectId: 'second-test-project',
+    name: 'second-test-project',
+    rootUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project',
+    projectResources: {
+      resources: [
+        {
+          resource: {
+            uri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project'
+          }
+        }
+      ]
+    },
+    environments: {
+      environments: [
+        {
+          id: 'second-test-project-env',
+          name: 'second-test-project',
+          resources: {
+            resources: [
+              {
+                resource: {
+                  uri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project'
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    settings: {
+      artifactReviewMode: 2, // 2 = TURBO ("Always Proceed")
+      browserJsExecutionPolicy: 4, // 4 = TURBO ("Always run")
+      autoExecutionPolicy: 2, // 2 = AUTO / EAGER
+      cascadeCommandsAutoExecution: 'EAGER',
+      sandboxMode: true
+    }
+  };
+
   var defaultCascadeModelConfigData = {
     clientModelConfigs: [
       {
@@ -495,45 +535,6 @@
       stepId++;
     });
 
-  var defaultProject = {
-    id: 'second-test-project',
-    projectId: 'second-test-project',
-    name: 'second-test-project',
-    rootUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project',
-    projectResources: {
-      resources: [
-        {
-          resource: {
-            uri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project'
-          }
-        }
-      ]
-    },
-    environments: {
-      environments: [
-        {
-          id: 'second-test-project-env',
-          name: 'second-test-project',
-          resources: {
-            resources: [
-              {
-                resource: {
-                  uri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project'
-                }
-              }
-            ]
-          }
-        }
-      ]
-    },
-    settings: {
-      artifactReviewMode: 2, // 2 = TURBO ("Always Proceed")
-      browserJsExecutionPolicy: 4, // 4 = TURBO ("Always run")
-      autoExecutionPolicy: 2, // 2 = AUTO / EAGER
-      cascadeCommandsAutoExecution: 'EAGER',
-      sandboxMode: true
-    }
-  };
 
     summariesMap[s.id] = {
       summary: s.summary,
