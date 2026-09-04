@@ -18,7 +18,7 @@
     }
   } catch (e) {}
 
-  var defaultItems = {
+    var defaultItems = {
     'antigravityOnboarding': 'true',
     'antigravityUnifiedStateSync.onboarding': 'true',
     'antigravity.isLoggedIn': 'true',
@@ -26,9 +26,13 @@
     'isAuthenticated': 'true',
     'antigravity_selected_model': '354',
     'selectedWorkspaceUri': 'file:///home/admin_mgenchev_altostrat_com/second-test-project',
-    'openProjects': JSON.stringify(['file:///home/admin_mgenchev_altostrat_com/second-test-project']),
-    'recentProjects': JSON.stringify(['file:///home/admin_mgenchev_altostrat_com/second-test-project']),
-    'lastOpenedWorkspace': 'file:///home/admin_mgenchev_altostrat_com/second-test-project'
+    'selectedProjectId': 'second-test-project',
+    'openProjects': JSON.stringify(['second-test-project', 'file:///home/admin_mgenchev_altostrat_com/second-test-project']),
+    'recentProjects': JSON.stringify(['second-test-project', 'file:///home/admin_mgenchev_altostrat_com/second-test-project']),
+    'lastOpenedWorkspace': 'file:///home/admin_mgenchev_altostrat_com/second-test-project',
+    'currentSection': 'second-test-project',
+    'projectsGroupBy': '"project"',
+    'projectsGroupByInternal': '"project"'
   };
 
   var listeners = new Set();
@@ -496,6 +500,32 @@
     projectId: 'second-test-project',
     name: 'second-test-project',
     rootUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project',
+    projectResources: {
+      resources: [
+        {
+          resource: {
+            uri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project'
+          }
+        }
+      ]
+    },
+    environments: {
+      environments: [
+        {
+          id: 'second-test-project-env',
+          name: 'second-test-project',
+          resources: {
+            resources: [
+              {
+                resource: {
+                  uri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project'
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
     settings: {
       artifactReviewMode: 2, // 2 = TURBO ("Always Proceed")
       browserJsExecutionPolicy: 4, // 4 = TURBO ("Always run")
@@ -521,6 +551,147 @@
     trajectoriesMap[s.id] = {
       trajectoryId: s.id,
       cascadeId: s.id,
+      trajectoryType: 0,
+      projectId: 'second-test-project',
+      workspaces: [{ workspaceUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project' }],
+      steps: stepsList
+    };
+  });
+
+    var LIVE_JOURNEY_DATA = [
+  {
+    "id": "72a5d3c7-0ce8-427c-8683-3d4eeb3928cd",
+    "summary": "Cloud Run vs GKE Autopilot Benchmark",
+    "createdTime": "2026-09-03T21:54:00Z",
+    "lastModifiedTime": "2026-09-03T21:55:00Z",
+    "turns": [
+      {
+        "user": "Summarize the key architectural benefits of Google Cloud Run vs GKE Autopilot for microservices with a structured comparison matrix",
+        "model": "### Quick Decision Heuristic\n\n* **Choose Cloud Run** if microservices communicate via HTTP/gRPC, experience variable or bursty traffic patterns, and your team wants minimal operational overhead and maximum time-to-market.\n* **Choose GKE Autopilot** if you require full Kubernetes tooling (Helm, Operators, ArgoCD), non-HTTP protocols, persistent block storage, or an enterprise service mesh with granular network policies.\n\n| Dimension | Cloud Run (Fully Managed) | GKE Autopilot (Serverless K8s) | Architect Recommendation |\n| :--- | :--- | :--- | :--- |\n| **Serverless Overhead** | **Zero infrastructure to manage** | Minimal (Node pools auto-managed) | **Cloud Run** for simplicity |\n| **Cold Start Latency** | **Fastest (< 1.5s cold, 0s warm)** | Fast (~10s-30s pod schedule) | **Cloud Run** for bursty APIs |\n| **Protocol Support** | HTTP/1.1, HTTP/2, gRPC, WebSockets | **Any TCP/UDP, gRPC, SCTP** | **GKE Autopilot** for raw sockets |\n| **Scaling Granularity** | Request-based (0 to 1000+ instances) | Resource-based (HPA / VPA pods) | **Cloud Run** scales to zero instantly |\n| **Stateful & Storage** | Stateless (Cloud Storage, Filestore via NFS) | **Full PVC, StatefulSets, CSI** | **GKE Autopilot** for persistence |\n| **Enterprise Security** | VPC Access, Binary Authorization | **Workload Identity, Calico/Cilium NetworkPolicies** | **GKE Autopilot** for Zero-Trust |\n| **Cost Model** | Pay-per-request / CPU-seconds | Pay-per-pod resource request (vCPU/GiB) | **Cloud Run** for sporadic load |\n| **Deployment Unit** | Container image (1 per service) | Kubernetes Pods, Deployments, CRDs | **GKE Autopilot** for complex graphs |\n| **Day-2 Operations** | Automated zero-downtime traffic splitting | GitOps (ArgoCD, Config Sync) | Match to platform team maturity |"
+      },
+      {
+        "user": "Provide a cost break-even analysis for 10M monthly requests with 200ms compute duration.",
+        "model": "### Cost & Break-Even Analysis (10M Monthly Requests)\n\n* **Workload Characteristics**:\n  - 10,000,000 requests / month\n  - Average execution duration: **200 ms**\n  - Concurrency: 80 requests / container\n  - Provisioned resources: 1 vCPU, 2 GiB Memory\n\n#### Cost Projection Breakdown\n| Service | Estimated Monthly Spend | Cost Driver & Dynamics |\n| :--- | :--- | :--- |\n| **Google Cloud Run** | **$18.40 / month** | Billed strictly for 2,000,000 vCPU-seconds + free tier allowance |\n| **GKE Autopilot** | **$74.20 / month** | $0.10/hr cluster management fee ($73.00) + pod resource consumption |\n\n* **Break-Even Crossover Point**: **38.4 QPS sustained 24/7**. Below 38.4 QPS, Cloud Run is dramatically cheaper due to zero cluster management fee and true scale-to-zero economics."
+      }
+    ]
+  },
+  {
+    "id": "e3042b26-eed6-4c85-84fd-775f20d23d7e",
+    "summary": "Executive Briefing & Workspace Automation",
+    "createdTime": "2026-09-03T21:56:00Z",
+    "lastModifiedTime": "2026-09-03T21:58:00Z",
+    "turns": [
+      {
+        "user": "Summarize my project updates from the last 24 hours, identify critical action items for our cloud modernization milestone, and draft a concise status email for the platform engineering team.",
+        "model": "### \ud83d\udcca Executive Workspace Digest (Last 24 Hours)\n\n1. **Cloud Modernization Milestone**:\n   - Multi-region API gateway load testing passed our P99 SLA (<80ms) across US and EU regions.\n   - BigQuery telemetry lakehouse schema migration completed with zero downtime.\n2. **Critical Action Items**:\n   - [ ] Validate cross-region failover buffer for Europe payment-gateway cluster.\n   - [ ] Confirm Q4 budget allocation for Vertex AI reasoning token quota.\n\n### \u2709\ufe0f Drafted Status Email\n```text\nTo: platform-engineering@enterprise.org\nSubject: Milestone Update: Cloud Modernization & Gateway SLA Validation\n\nTeam,\n\nQuick milestone update: Multi-region gateway load testing passed our P99 SLA across US and EU regions, and schema validation for the enterprise analytics lakehouse is complete. We are fully on track for our cloud modernization review.\n\nAction items underway:\n1. Cross-region failover validation for payment gateways.\n2. Q4 Vertex AI reasoning token quota allocation.\n\nLet me know if there are any blockers before tomorrow's sync.\n```"
+      },
+      {
+        "user": "Send the update email to the platform engineering team, schedule a 30-minute sync tomorrow at 10:00 AM CET with a Google Meet link, and add a reminder to my tasks.",
+        "model": "\u2705 **Workspace Actions Executed**:\n\n1. \u2709\ufe0f **Dispatched Email**: Sent milestone update to `platform-engineering@enterprise.org`.\n2. \ud83d\udcc5 **Calendar Invite Created**: `Cloud Modernization Milestone Sync` scheduled for tomorrow, 10:00 AM \u2013 10:30 AM CET with Google Meet room provisioned.\n3. \ud83d\udccb **Task Logged**: Added action item to Google Tasks (`validate cross-region failover buffer`)."
+      }
+    ]
+  },
+  {
+    "id": "3404756b-8ab0-45e1-b7c1-a31a2edb6572",
+    "summary": "BigQuery Lakehouse & Revenue Anomaly Detection",
+    "createdTime": "2026-09-03T21:57:00Z",
+    "lastModifiedTime": "2026-09-03T21:58:00Z",
+    "turns": [
+      {
+        "user": "Write an optimized BigQuery SQL query to detect revenue anomalies across global retail regions over the last 90 days using window functions and z-score standard deviation.",
+        "model": "```sql\nWITH daily_regional_revenue AS (\n  SELECT\n    DATE(transaction_timestamp) AS transaction_date,\n    region_code,\n    SUM(transaction_amount_usd) AS daily_revenue\n  FROM `enterprise-analytics.retail_lakehouse.orders_partitioned`\n  WHERE transaction_timestamp >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 90 DAY)\n  GROUP BY transaction_date, region_code\n),\nrolling_stats AS (\n  SELECT\n    transaction_date,\n    region_code,\n    daily_revenue,\n    AVG(daily_revenue) OVER(\n      PARTITION BY region_code\n      ORDER BY transaction_date\n      ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING\n    ) AS moving_avg_30d,\n    STDDEV(daily_revenue) OVER(\n      PARTITION BY region_code\n      ORDER BY transaction_date\n      ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING\n    ) AS moving_stddev_30d\n  FROM daily_regional_revenue\n)\nSELECT\n  transaction_date,\n  region_code,\n  ROUND(daily_revenue, 2) AS daily_revenue,\n  ROUND(moving_avg_30d, 2) AS expected_baseline_revenue,\n  ROUND(SAFE_DIVIDE(daily_revenue - moving_avg_30d, moving_stddev_30d), 2) AS revenue_z_score,\n  CASE\n    WHEN SAFE_DIVIDE(daily_revenue - moving_avg_30d, moving_stddev_30d) > 2.5 THEN 'SPIKE_ANOMALY'\n    WHEN SAFE_DIVIDE(daily_revenue - moving_avg_30d, moving_stddev_30d) < -2.5 THEN 'DROP_ANOMALY'\n    ELSE 'NORMAL'\n  END AS anomaly_classification\nFROM rolling_stats\nWHERE moving_stddev_30d IS NOT NULL\nORDER BY ABS(revenue_z_score) DESC;\n```\n\n### Key Architectural Features:\n1. **Unbiased Rolling Baseline**: `ROWS BETWEEN 30 PRECEDING AND 1 PRECEDING` prevents the anomaly itself from skewing the standard deviation.\n2. **Zero-Division Safeguard**: `SAFE_DIVIDE` cleanly handles regions with static zero variance."
+      },
+      {
+        "user": "Add partition pruning on transaction_date, filter out holidays, and format anomalies into a monthly summary report.",
+        "model": "### Updated Production BigQuery Query (Partition Pruned & Holiday Filtered)\n\n```sql\nSELECT\n  DATE_TRUNC(transaction_date, MONTH) AS anomaly_month,\n  region_code,\n  COUNTIF(anomaly_classification = 'SPIKE_ANOMALY') AS positive_anomalies,\n  COUNTIF(anomaly_classification = 'DROP_ANOMALY') AS negative_anomalies,\n  ROUND(AVG(daily_revenue), 2) AS avg_monthly_revenue\nFROM (`enterprise-analytics.retail_lakehouse.anomalies_view`)\nWHERE transaction_date >= '2026-06-01'\n  AND is_public_holiday = FALSE\nGROUP BY 1, 2\nORDER BY 1 DESC, negative_anomalies DESC;\n```\n\n* Partition Pruning: Guaranteed 92% byte scan reduction by enforcing `_PARTITIONDATE` filtering."
+      }
+    ]
+  },
+  {
+    "id": "c0729e55-1fa5-466d-b84f-8c9698f4bce1",
+    "summary": "Agentic SRE: Regional Incident RCA & Circuit Breaker",
+    "createdTime": "2026-09-03T21:57:30Z",
+    "lastModifiedTime": "2026-09-03T21:58:30Z",
+    "turns": [
+      {
+        "user": "Investigate a high-priority incident: P99 latency spiked from 45ms to 850ms on the payment-gateway service in europe-west1. Outline root cause analysis steps, mitigation runbook, and circuit breaker configuration.",
+        "model": "### \ud83d\udea8 Incident RCA: Payment Gateway P99 Latency Degradation\n\n* **Incident Summary**: At 14:12 UTC, P99 latency on `payment-gateway.europe-west1` increased from 45ms to 850ms, generating 504 Gateway Timeouts on upstream checkout flows.\n* **Root Cause**: Downstream banking clearance partner introduced a 500ms synchronous lock on debit transactions, causing connection pool exhaustion on our Envoy ingress proxy (all 2,048 worker threads saturated).\n\n### \ud83d\udee1\ufe0f Immediate Mitigation Runbook\n1. **Divert Traffic**: Shift 40% of non-essential checkout traffic to `europe-west4` gateway via Cloud Load Balancing weighted routing.\n2. **Apply Circuit Breaker**: Throttle calls to clearance endpoint when consecutive 5xx errors exceed 5% over 10 seconds.\n\n```yaml\napiVersion: networking.istio.io/v1alpha3\nkind: DestinationRule\nmetadata:\n  name: payment-gateway-circuit-breaker\n  namespace: payments-prod\nspec:\n  host: payment-gateway.service.internal\n  trafficPolicy:\n    connectionPool:\n      tcp:\n        maxConnections: 1024\n      http:\n        http1MaxPendingRequests: 100\n        maxRequestsPerConnection: 10\n    outlierDetection:\n      consecutive5xxErrors: 3\n      interval: 10s\n      baseEjectionTime: 30s\n      maxEjectionPercent: 50\n```"
+      },
+      {
+        "user": "Generate the automated failover Terraform configuration to divert 40% of europe-west1 traffic to europe-west4 during degradation.",
+        "model": "```hcl\nresource \"google_compute_backend_service\" \"payment_gateway_global\" {\n  name                  = \"payment-gateway-backend\"\n  project               = \"second-test-project-393510\"\n  protocol              = \"HTTP2\"\n  load_balancing_scheme = \"EXTERNAL_MANAGED\"\n\n  backend {\n    group                 = google_compute_region_network_endpoint_group.europe_west1_neg.id\n    balancing_mode        = \"RATE\"\n    max_rate_per_endpoint = 800\n    capacity_scaler       = 0.60 # Sheds 40% traffic during regional latency incident\n  }\n\n  backend {\n    group                 = google_compute_region_network_endpoint_group.europe_west4_neg.id\n    balancing_mode        = \"RATE\"\n    max_rate_per_endpoint = 1200\n    capacity_scaler       = 1.00 # Absorbs degraded overflow\n  }\n}\n```\n\n* **Status**: Tested and verified. Zero connection drops during synthetic regional drain."
+      }
+    ]
+  },
+  {
+    "id": "29906621-eb9a-42f5-ba0f-3760d24729fc",
+    "summary": "Vibe Coder: Service Health Monitor Dashboard",
+    "createdTime": "2026-09-03T21:58:00Z",
+    "lastModifiedTime": "2026-09-03T22:03:00Z",
+    "turns": [
+      {
+        "user": "Build a single-file interactive Cloud Service Health Monitor dashboard using HTML, Tailwind CSS, and Vanilla JavaScript with live status toggles and latency sparklines.",
+        "model": "Ran `mkdir -p /home/admin_mgenchev_altostrat_com/.gemini/antigravity/scratch/cloud-health-dashboard`\n\nCreated `/home/admin_mgenchev_altostrat_com/.gemini/antigravity/scratch/cloud-health-dashboard/index.html` with real-time Tailwind UI, responsive service cards, SVG sparklines, and auto-updating latency telemetry.\n\nStarted preview server on `http://localhost:8088/` (HTTP 200 OK).\n\n\u2705 **TURBO Mode Verified**: Automated file creation, dependencies, and daemon startup completed with zero interactive confirmation pauses."
+      },
+      {
+        "user": "Add simulated real-time WebSocket jitter events and an export-to-JSON button.",
+        "model": "Updated `/home/admin_mgenchev_altostrat_com/.gemini/antigravity/scratch/cloud-health-dashboard/index.html` with:\n1. **Live Jitter Simulator**: Injects stochastic latency blips across services every 3 seconds.\n2. **Export Telemetry**: One-click download of all 5 service metrics as formatted JSON."
+      }
+    ]
+  }
+];
+
+  LIVE_JOURNEY_DATA.forEach(function(lj) {
+    var stepsList = [];
+    var stepId = 0;
+    (lj.turns || []).forEach(function(turn) {
+      stepsList.push({
+        stepId: stepId,
+        type: 0,
+        status: 1,
+        stepPayload: {
+          case: 'userInput',
+          value: {
+            userQuery: turn.user
+          }
+        }
+      });
+      stepId++;
+      stepsList.push({
+        stepId: stepId,
+        type: 1,
+        status: 1,
+        stepPayload: {
+          case: 'plannerResponse',
+          value: {
+            response: turn.model,
+            modifiedResponse: turn.model
+          }
+        }
+      });
+      stepId++;
+    });
+
+    summariesMap[lj.id] = {
+      summary: lj.summary,
+      stepCount: stepsList.length,
+      trajectoryId: lj.id,
+      cascadeId: lj.id,
+      status: 1,
+      createdTime: lj.createdTime,
+      lastModifiedTime: lj.lastModifiedTime,
+      trajectoryType: 0,
+      projectId: 'second-test-project',
+      trajectoryMetadata: {
+        projectId: 'second-test-project',
+        workspaces: [{ workspaceUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project' }]
+      },
+      workspaces: [{ workspaceUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project' }]
+    };
+
+    trajectoriesMap[lj.id] = {
+      trajectoryId: lj.id,
+      cascadeId: lj.id,
       trajectoryType: 0,
       projectId: 'second-test-project',
       workspaces: [{ workspaceUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project' }],
@@ -625,25 +796,37 @@ var defaultMcpStates = [
             activeTrajectoryId: activeCid,
             sidebarSections: [
               {
-                uri: 'workspace-keynote-demos',
-                label: 'Keynote Demonstrations',
+                uri: 'second-test-project',
+                label: 'second-test-project',
+                sectionKind: {
+                  case: 'projectSection',
+                  value: {}
+                },
+                displayState: {
+                  isCollapsed: false
+                },
+                conversations: [
+                  { conversationId: '72a5d3c7-0ce8-427c-8683-3d4eeb3928cd', title: 'Cloud Run vs GKE Autopilot Benchmark', lastModifiedTime: '2026-09-03T21:55:00Z' },
+                  { conversationId: 'e3042b26-eed6-4c85-84fd-775f20d23d7e', title: 'Executive Briefing & Workspace Automation', lastModifiedTime: '2026-09-03T21:58:00Z' },
+                  { conversationId: '3404756b-8ab0-45e1-b7c1-a31a2edb6572', title: 'BigQuery Lakehouse & Revenue Anomaly Detection', lastModifiedTime: '2026-09-03T21:58:00Z' },
+                  { conversationId: 'c0729e55-1fa5-466d-b84f-8c9698f4bce1', title: 'Agentic SRE: Regional Incident RCA & Circuit Breaker', lastModifiedTime: '2026-09-03T21:58:30Z' },
+                  { conversationId: '29906621-eb9a-42f5-ba0f-3760d24729fc', title: 'Vibe Coder: Service Health Monitor Dashboard', lastModifiedTime: '2026-09-03T22:03:00Z' }
+                ]
+              },
+              {
+                uri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project',
+                label: 'second-test-project',
                 sectionKind: {
                   case: 'workspaceSection',
                   value: {
-                    workspaceUri: 'file:///home/admin_mgenchev_altostrat_com',
-                    folderUris: ['file:///home/admin_mgenchev_altostrat_com']
+                    workspaceUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project',
+                    folderUris: ['file:///home/admin_mgenchev_altostrat_com/second-test-project']
                   }
                 },
                 displayState: {
                   isCollapsed: false
                 },
-                conversations: PREWARMED_DEMO_SESSIONS.map(function(s) {
-                  return {
-                    conversationId: s.id,
-                    title: s.summary,
-                    lastModifiedTime: s.lastModifiedTime
-                  };
-                })
+                conversations: []
               }
             ]
           },
@@ -674,7 +857,12 @@ var defaultMcpStates = [
         'session-6-kg-grounding',
         'session-7-swarms-aaak',
         'session-8-autonomous-coding',
-        'session-9-vibe-coder'
+        'session-9-vibe-coder',
+        '72a5d3c7-0ce8-427c-8683-3d4eeb3928cd',
+        'e3042b26-eed6-4c85-84fd-775f20d23d7e',
+        '3404756b-8ab0-45e1-b7c1-a31a2edb6572',
+        'c0729e55-1fa5-466d-b84f-8c9698f4bce1',
+        '29906621-eb9a-42f5-ba0f-3760d24729fc'
       ]);
 
       var uuidToPrewarmed = {
@@ -686,7 +874,12 @@ var defaultMcpStates = [
         'a1b2c3d4-e5f6-4a1b-8c2d-3e4f5a6b7c86': 'session-6-kg-grounding',
         'a1b2c3d4-e5f6-4a1b-8c2d-3e4f5a6b7c87': 'session-7-swarms-aaak',
         'a1b2c3d4-e5f6-4a1b-8c2d-3e4f5a6b7c88': 'session-8-autonomous-coding',
-        'a1b2c3d4-e5f6-4a1b-8c2d-3e4f5a6b7c89': 'session-9-vibe-coder'
+        'a1b2c3d4-e5f6-4a1b-8c2d-3e4f5a6b7c89': 'session-9-vibe-coder',
+        '72a5d3c7-0ce8-427c-8683-3d4eeb3928cd': '72a5d3c7-0ce8-427c-8683-3d4eeb3928cd',
+        'e3042b26-eed6-4c85-84fd-775f20d23d7e': 'e3042b26-eed6-4c85-84fd-775f20d23d7e',
+        '3404756b-8ab0-45e1-b7c1-a31a2edb6572': '3404756b-8ab0-45e1-b7c1-a31a2edb6572',
+        'c0729e55-1fa5-466d-b84f-8c9698f4bce1': 'c0729e55-1fa5-466d-b84f-8c9698f4bce1',
+        '29906621-eb9a-42f5-ba0f-3760d24729fc': '29906621-eb9a-42f5-ba0f-3760d24729fc'
       };
 
       function resolvePrewarmedCid(args) {
