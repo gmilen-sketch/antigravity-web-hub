@@ -1039,11 +1039,8 @@ var defaultMcpStates = [
       }
       if (url.indexOf('ProjectUpdatesStream') !== -1 || url.indexOf('projectUpdatesStream') !== -1) {
         return makeStreamWithInitialMessage({
-          update: {
-            case: 'projectList',
-            value: {
-              projectIds: ['second-test-project']
-            }
+          projectList: {
+            projectIds: ['second-test-project']
           }
         });
       }
