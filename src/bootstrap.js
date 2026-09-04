@@ -426,9 +426,9 @@
     ]
   }
 ];
-
   var summariesMap = {};
   var trajectoriesMap = {};
+  var prewarmedStreamControllers = {};
 
   ORDERED_PRESENTATION_SESSIONS.forEach(function(s) {
     var stepsList = [];
@@ -477,7 +477,7 @@
 
     summariesMap[s.id] = {
       summary: s.summary,
-      stepCount: stepsList.length,
+      stepCount: s.id === '3404756b-8ab0-45e1-b7c1-a31a2edb6572' ? 14 : stepsList.length,
       trajectoryId: s.id,
       cascadeId: s.id,
       status: 1,
@@ -490,18 +490,182 @@
       workspaces: [{ workspaceUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project' }]
     };
 
-    trajectoriesMap[s.id] = {
-      trajectoryId: s.id,
-      cascadeId: s.id,
-      trajectoryType: 0,
-      projectId: 'second-test-project',
-      trajectoryMetadata: s.trajectoryMetadata,
-      workspaces: [{ workspaceUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project' }],
-      steps: stepsList
-    };
+    // Note: Session 2 ('3404756b-8ab0-45e1-b7c1-a31a2edb6572') is served LIVE by the language server.
+    // Only register static trajectories for pre-warmed mock sessions.
+    if (s.id !== '3404756b-8ab0-45e1-b7c1-a31a2edb6572') {
+      trajectoriesMap[s.id] = {
+        trajectoryId: s.id,
+        cascadeId: s.id,
+        trajectoryType: 0,
+        projectId: 'second-test-project',
+        trajectoryMetadata: s.trajectoryMetadata,
+        workspaces: [{ workspaceUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project' }],
+        steps: stepsList
+      };
+    }
   });
 
-var defaultMcpStates = [
+  function generatePrewarmedResponse(cid, userPrompt) {
+    var lower = (userPrompt || '').toLowerCase();
+    
+    if (cid === 'session-1-business-briefing') {
+      if (lower.includes('email') || lower.includes('send') || lower.includes('mail')) {
+        return "### ✉️ Executive Communication Dispatched\n\n" +
+          "**To**: `platform-engineering@enterprise.org`, `alex.morgan@enterprise.org`\n" +
+          "**Subject**: Confirmed Action Plan: Cloud Modernization & Failover Buffers\n\n" +
+          "```text\n" +
+          "Team,\n\n" +
+          "The follow-up action plan from today's briefing has been confirmed:\n" +
+          "1. europe-west1 failover testing scheduled for tomorrow morning.\n" +
+          "2. BigQuery analytics regression benchmark script committed to main.\n" +
+          "3. Q4 Vertex AI reasoning token quota allocation approved.\n\n" +
+          "Please review the updated dashboard prior to tomorrow's sync.\n" +
+          "```\n\n" +
+          "✅ **Actions Completed**:\n" +
+          "- Dispatched email via Google Workspace API.\n" +
+          "- Calendar invite synced with Google Meet link provisioned.\n" +
+          "- Logged task in Google Tasks.";
+      }
+      if (lower.includes('task') || lower.includes('todo') || lower.includes('action')) {
+        return "### 📋 Updated Executive Task Ledger\n\n" +
+          "| Priority | Action Item | Owner | Due Date | Status |\n" +
+          "| :--- | :--- | :--- | :--- | :--- |\n" +
+          "| **P0** | Validate cross-region failover buffer for Europe payment gateway | Sarah Jenkins | Tomorrow 12:00 CET | 🟡 In Progress |\n" +
+          "| **P1** | Run regression benchmark for BigQuery analytics lakehouse | David Chen | Friday 17:00 CET | 🟢 Scheduled |\n" +
+          "| **P1** | Finalize Vertex AI reasoning token quota allocation (b/535124194) | Elena Stanescu | Monday 10:00 CET | 🟢 Ready |\n\n" +
+          "Synced with Google Tasks and shared account spreadsheet.";
+      }
+      return "### 📊 Executive Briefing Status & Action Items\n\n" +
+        "Processed your request: **\"" + userPrompt + "\"**\n\n" +
+        "1. **Platform Engineering Sync**: Reconciled latest roadmap updates across US and EU clusters.\n" +
+        "2. **Automation Pipeline**: All automated sweeps (Gmail, Calendar, Tasks) executed with zero pending blockers.\n" +
+        "3. **Next Milestone**: Architecture decision review scheduled for tomorrow at 10:00 AM CET.\n\n" +
+        "Let me know if you would like to dispatch further updates or adjust team deliverables.";
+    }
+
+    if (cid === 'session-3-agentic-sre') {
+      if (lower.includes('terraform') || lower.includes('failover') || lower.includes('drain')) {
+        return "### 🛠️ Automated Failover & Drain Configuration\n\n" +
+          "Applied Cloud Load Balancing weighted backend configuration for regional traffic drain:\n\n" +
+          "```hcl\n" +
+          "resource \"google_compute_backend_service\" \"payment_gateway_global\" {\n" +
+          "  name                  = \"payment-gateway-backend\"\n" +
+          "  project               = \"second-test-project-393510\"\n" +
+          "  protocol              = \"HTTP2\"\n" +
+          "  load_balancing_scheme = \"EXTERNAL_MANAGED\"\n\n" +
+          "  backend {\n" +
+          "    group                 = google_compute_region_network_endpoint_group.europe_west1_neg.id\n" +
+          "    balancing_mode        = \"RATE\"\n" +
+          "    max_rate_per_endpoint = 800\n" +
+          "    capacity_scaler       = 0.50 # Sheds 50% traffic during regional partner degradation\n" +
+          "  }\n\n" +
+          "  backend {\n" +
+          "    group                 = google_compute_region_network_endpoint_group.europe_west4_neg.id\n" +
+          "    balancing_mode        = \"RATE\"\n" +
+          "    max_rate_per_endpoint = 1200\n" +
+          "    capacity_scaler       = 1.00 # Absorbs degraded overflow\n" +
+          "  }\n" +
+          "}\n" +
+          "```\n\n" +
+          "✅ **Telemetry Verification**: P99 latency dropped from 850ms to 62ms within 90 seconds of drain application. Error rate stabilized below 0.01%.";
+      }
+      return "### 🛡️ Agentic SRE Incident Telemetry & Root Cause Analysis\n\n" +
+        "Evaluated incident query: **\"" + userPrompt + "\"**\n\n" +
+        "#### 📈 Current Telemetry Summary\n" +
+        "* **Service**: `payment-gateway.europe-west1`\n" +
+        "* **P99 Latency**: 48ms (Normalized from 850ms peak)\n" +
+        "* **Envoy Connection Pool**: 248 / 2048 connections (12% saturation)\n" +
+        "* **Circuit Breaker Status**: Active (consecutive 5xx threshold = 3, ejection duration = 30s)\n\n" +
+        "#### 📋 Recommended Runbook Steps\n" +
+        "1. Maintain 60/40 traffic split between `europe-west1` and `europe-west4` until downstream partner clearance locks are lifted.\n" +
+        "2. Monitor upstream 504 Gateway Timeouts on Cloud Monitoring dashboard.\n" +
+        "3. File post-mortem report and update SLA exception tracking in Buganizer.";
+    }
+
+    if (cid === 'session-4-ai-summit-research') {
+      if (lower.includes('sovereign') || lower.includes('europe') || lower.includes('eu') || lower.includes('gdpr') || lower.includes('compliance')) {
+        return "### 🇪🇺 European Sovereign AI Architecture & Compliance Matrix\n\n" +
+          "Following discussions at The AI Summit London, here is the technical blueprint for EU AI Act compliance:\n\n" +
+          "```mermaid\n" +
+          "graph LR\n" +
+          "    User[\"EU Enterprise Clients\"] -->|\"TLS 1.3 / CMEK\"| Edge[\"europe-west3 Cloud Armor & VPC-SC\"]\n" +
+          "    Edge --> App[\"Confidential GKE Autopilot\"]\n" +
+          "    App -->|\"Zero Egress\"| Model[\"Vertex AI Private Endpoint (europe-west3)\"]\n" +
+          "    App -->|\"CMEK External EKM\"| Store[\"Sovereign BigQuery & Cloud Storage\"]\n" +
+          "```\n\n" +
+          "#### 🛡️ Compliance Verification Checklist\n" +
+          "1. **Strict Data Residency**: Zero prompt or token egress outside `europe-west3` (Frankfurt).\n" +
+          "2. **Cryptographic Key Sovereignty**: Cloud EKM integration ensures customer holds root encryption keys.\n" +
+          "3. **Confidential Model Execution**: AMD SEV-SNP encrypted memory preventing any hypervisor inspection.\n" +
+          "4. **No Foundation Model Training**: Contractually guaranteed under Google Cloud Enterprise Privacy Agreement.";
+      }
+      return "### 🏛️ Universal Solution Architect: The AI Summit 2026 Deep Synthesis\n\n" +
+        "Analyzed strategic inquiry: **\"" + userPrompt + "\"**\n\n" +
+        "#### 🌐 6-Pillar Google Cloud Leapfrog Strategy\n" +
+        "1. **AI/ML Foundation**: Dynamic dual-tier model routing (`gemini-3.5-flash-lite` for ultra-fast intent classification + `gemini-3.6-flash` for multi-step agentic planning).\n" +
+        "2. **Data Lakehouse**: Zero-copy vector search over BigLake tables in BigQuery, eliminating ETL lag.\n" +
+        "3. **Application Modernization**: Event-driven Cloud Run micro-agents coordinated via Pub/Sub and Workflows.\n" +
+        "4. **Security & Governance**: VPC Service Controls perimeter and Gemini fine-grained tool authorization.\n" +
+        "5. **Multicloud Operations**: Anthos-managed egress gateways for hybrid cloud enterprise workloads.\n" +
+        "6. **Sovereign Cloud**: Confidential VMs with AMD SEV-SNP encryption for EU financial services tier.\n\n" +
+        "#### 🎩 Six Thinking Hats Executive Verdict\n" +
+        "* **White Hat**: Empirical benchmarks demonstrate 78% reduction in inference cost and 4.2x faster TTFT.\n" +
+        "* **Black Hat**: Mitigate token quota exhaustion through jittered exponential retry queues.\n" +
+        "* **Blue Hat Verdict**: **APPROVED FOR PRODUCTION ROADMAP**.";
+    }
+
+    return "### 🤖 Agent Response\n\n" +
+      "Processed your follow-up request:\n\n" +
+      "> " + userPrompt + "\n\n" +
+      "1. **Analysis Complete**: Verified configuration and environment state against project `second-test-project-393510`.\n" +
+      "2. **Operational Status**: All systems healthy and executing within SLA thresholds.\n" +
+      "3. **Recommended Next Step**: Continue monitoring telemetry and review architectural changes.";
+  }
+
+  function pushStreamUpdate(cid, isExecuting) {
+    var controller = prewarmedStreamControllers[cid];
+    if (!controller) return;
+    var targetTraj = trajectoriesMap[cid];
+    if (!targetTraj) return;
+    var stepsList = targetTraj.steps;
+
+    var doc = {
+      update: {
+        conversationId: cid,
+        trajectoryId: cid,
+        status: isExecuting ? 2 : 1,
+        executableStatus: isExecuting ? 2 : 1,
+        executorLoopStatus: isExecuting ? 2 : 1,
+        fullyIdle: !isExecuting,
+        mainTrajectoryUpdate: {
+          trajectoryType: 0,
+          stepsUpdate: {
+            indices: stepsList.map(function(_, idx) { return idx; }),
+            steps: stepsList,
+            totalLength: stepsList.length,
+            pageBounds: {
+              startIndex: 0,
+              endIndexExclusive: stepsList.length
+            }
+          }
+        }
+      }
+    };
+
+    var enc = new TextEncoder().encode(JSON.stringify(doc));
+    var dataHeader = new Uint8Array([0x00, (enc.length >> 24) & 0xff, (enc.length >> 16) & 0xff, (enc.length >> 8) & 0xff, enc.length & 0xff]);
+    var chunk = new Uint8Array(5 + enc.length);
+    chunk.set(dataHeader, 0);
+    chunk.set(enc, 5);
+
+    try {
+      controller.enqueue(chunk);
+    } catch (e) {
+      console.error('[Bootstrap] Failed to enqueue stream chunk for', cid, e);
+    }
+  }
+
+  var defaultMcpStates = [
     {
       spec: {
         serverName: 'knowledge_graph',
@@ -641,23 +805,6 @@ var defaultMcpStates = [
         'session-4-ai-summit-research'
       ]);
 
-      var uuidToPrewarmed = {
-        'a1b2c3d4-e5f6-4a1b-8c2d-3e4f5a6b7c81': 'session-1-productivity',
-        'a1b2c3d4-e5f6-4a1b-8c2d-3e4f5a6b7c82': 'session-2-cloud-ops',
-        'a1b2c3d4-e5f6-4a1b-8c2d-3e4f5a6b7c83': 'session-3-bigquery',
-        'a1b2c3d4-e5f6-4a1b-8c2d-3e4f5a6b7c84': 'session-4-agentic-sre',
-        'a1b2c3d4-e5f6-4a1b-8c2d-3e4f5a6b7c85': 'session-5-deep-research',
-        'a1b2c3d4-e5f6-4a1b-8c2d-3e4f5a6b7c86': 'session-6-kg-grounding',
-        'a1b2c3d4-e5f6-4a1b-8c2d-3e4f5a6b7c87': 'session-7-swarms-aaak',
-        'a1b2c3d4-e5f6-4a1b-8c2d-3e4f5a6b7c88': 'session-8-autonomous-coding',
-        'a1b2c3d4-e5f6-4a1b-8c2d-3e4f5a6b7c89': 'session-9-vibe-coder',
-        '72a5d3c7-0ce8-427c-8683-3d4eeb3928cd': '72a5d3c7-0ce8-427c-8683-3d4eeb3928cd',
-        'e3042b26-eed6-4c85-84fd-775f20d23d7e': 'e3042b26-eed6-4c85-84fd-775f20d23d7e',
-        '3404756b-8ab0-45e1-b7c1-a31a2edb6572': '3404756b-8ab0-45e1-b7c1-a31a2edb6572',
-        'c0729e55-1fa5-466d-b84f-8c9698f4bce1': 'c0729e55-1fa5-466d-b84f-8c9698f4bce1',
-        '29906621-eb9a-42f5-ba0f-3760d24729fc': '29906621-eb9a-42f5-ba0f-3760d24729fc'
-      };
-
       function resolvePrewarmedCid(args) {
         try {
           var reqBody = args[1] && args[1].body;
@@ -665,9 +812,6 @@ var defaultMcpStates = [
             var strBody = (typeof reqBody === 'string') ? reqBody : new TextDecoder().decode(reqBody);
             for (var pid of prewarmedIds) {
               if (strBody.indexOf(pid) !== -1) return pid;
-            }
-            for (var uid in uuidToPrewarmed) {
-              if (strBody.indexOf(uid) !== -1) return uuidToPrewarmed[uid];
             }
           }
         } catch (e) {}
@@ -687,6 +831,90 @@ var defaultMcpStates = [
         } catch (e) {}
 
         return null;
+      }
+
+      if (url.indexOf('SendUserCascadeMessage') !== -1 || url.indexOf('sendUserCascadeMessage') !== -1) {
+        var prewarmedCid = resolvePrewarmedCid(args);
+        if (prewarmedCid && trajectoriesMap[prewarmedCid]) {
+          console.log('[Bootstrap] Handling dynamic SendUserCascadeMessage for:', prewarmedCid);
+          var userText = 'Follow-up query';
+          try {
+            var reqBody = args[1] && args[1].body;
+            if (reqBody) {
+              var str = (typeof reqBody === 'string') ? reqBody : new TextDecoder().decode(reqBody);
+              var jsonMatch = str.match(/\{.*\}/s);
+              if (jsonMatch) {
+                var parsed = JSON.parse(jsonMatch[0]);
+                if (parsed.items && parsed.items[0] && parsed.items[0].text) {
+                  userText = parsed.items[0].text;
+                }
+              }
+            }
+          } catch (e) {}
+
+          var targetTraj = trajectoriesMap[prewarmedCid];
+          var uStepId = targetTraj.steps.length;
+          var uStep = {
+            id: uStepId,
+            type: 14,
+            status: 3,
+            metadata: {},
+            userInput: {
+              userResponse: userText,
+              items: [{ text: userText }]
+            },
+            step: {
+              case: 'userInput',
+              value: {
+                userResponse: userText,
+                items: [{ text: userText }]
+              }
+            }
+          };
+          targetTraj.steps.push(uStep);
+
+          // Notify client stream that turn started
+          pushStreamUpdate(prewarmedCid, true);
+
+          // Generate response and complete after short delay to simulate thought/streaming
+          setTimeout(function() {
+            var modelResp = generatePrewarmedResponse(prewarmedCid, userText);
+            var pStepId = targetTraj.steps.length;
+            var pStep = {
+              id: pStepId,
+              type: 15,
+              status: 3,
+              metadata: {},
+              plannerResponse: {
+                response: modelResp,
+                modifiedResponse: modelResp
+              },
+              step: {
+                case: 'plannerResponse',
+                value: {
+                  response: modelResp,
+                  modifiedResponse: modelResp
+                }
+              }
+            };
+            targetTraj.steps.push(pStep);
+
+            if (summariesMap[prewarmedCid]) {
+              summariesMap[prewarmedCid].stepCount = targetTraj.steps.length;
+              summariesMap[prewarmedCid].lastModifiedTime = new Date().toISOString();
+              summariesMap[prewarmedCid].lastUserInputTime = new Date().toISOString();
+            }
+
+            // Push complete update
+            pushStreamUpdate(prewarmedCid, false);
+            console.log('[Bootstrap] Finished streaming response for:', prewarmedCid);
+          }, 500);
+
+          return makeGrpcWeb({});
+        }
+
+        console.log('[Bootstrap] Live conversation detected - passing SendUserCascadeMessage to language server');
+        return window._origNativeFetch.apply(this, args);
       }
 
       if (url.indexOf('JetboxWriteSummary') !== -1 || url.indexOf('jetboxWriteSummary') !== -1) {
@@ -711,31 +939,23 @@ var defaultMcpStates = [
 
       if (url.indexOf('StreamAgentStateUpdates') !== -1 || url.indexOf('streamAgentStateUpdates') !== -1) {
         var prewarmedCid = resolvePrewarmedCid(args);
-        if (prewarmedCid) {
-          console.log('[Bootstrap] Serving pre-warmed StreamAgentStateUpdates for:', prewarmedCid);
-          var targetTraj = trajectoriesMap[prewarmedCid];
-          var stepsList = targetTraj.steps;
-
-          return makeStreamWithInitialMessage({
-            update: {
-              conversationId: prewarmedCid,
-              trajectoryId: prewarmedCid,
-              status: 1,
-              executableStatus: 1,
-              executorLoopStatus: 1,
-              fullyIdle: true,
-              mainTrajectoryUpdate: {
-                trajectoryType: 0,
-                stepsUpdate: {
-                  indices: stepsList.map(function(_, idx) { return idx; }),
-                  steps: stepsList,
-                  totalLength: stepsList.length,
-                  pageBounds: {
-                    startIndex: 0,
-                    endIndexExclusive: stepsList.length
-                  }
-                }
-              }
+        if (prewarmedCid && trajectoriesMap[prewarmedCid]) {
+          console.log('[Bootstrap] Serving dynamic StreamAgentStateUpdates for:', prewarmedCid);
+          return new Response(new ReadableStream({
+            start: function(controller) {
+              prewarmedStreamControllers[prewarmedCid] = controller;
+              pushStreamUpdate(prewarmedCid, false);
+            },
+            cancel: function() {
+              delete prewarmedStreamControllers[prewarmedCid];
+            }
+          }), {
+            status: 200,
+            headers: {
+              'Content-Type': 'application/grpc-web+json',
+              'Access-Control-Allow-Origin': '*',
+              'Access-Control-Allow-Credentials': 'true',
+              'Access-Control-Expose-Headers': 'Content-Length,Content-Range,grpc-status,grpc-message,grpc-status-details-bin,connect-protocol-version,grpc-encoding,grpc-accept-encoding,Grpc-Status,Grpc-Message,Grpc-Status-Details-Bin'
             }
           });
         }
@@ -746,7 +966,7 @@ var defaultMcpStates = [
 
       if (url.indexOf('UpdateConversationAnnotations') !== -1 || url.indexOf('updateConversationAnnotations') !== -1) {
         var prewarmedCid = resolvePrewarmedCid(args);
-        if (prewarmedCid) {
+        if (prewarmedCid && trajectoriesMap[prewarmedCid]) {
           try {
             var reqBody = args[1] && args[1].body;
             if (reqBody) {
@@ -768,7 +988,7 @@ var defaultMcpStates = [
       if (url.indexOf('FetchConversationAnnotations') !== -1 || url.indexOf('fetchConversationAnnotations') !== -1 ||
           url.indexOf('GetConversationAnnotations') !== -1 || url.indexOf('getConversationAnnotations') !== -1) {
         var prewarmedCid = resolvePrewarmedCid(args);
-        if (prewarmedCid) {
+        if (prewarmedCid && summariesMap[prewarmedCid]) {
           var targetSummary = summariesMap[prewarmedCid];
           var ann = (targetSummary && targetSummary.annotations) ? targetSummary.annotations : {};
           return makeGrpcWeb({ annotations: ann });
@@ -786,28 +1006,12 @@ var defaultMcpStates = [
             numTotalSteps: targetTraj.steps.length
           });
         }
-        // Fallback: check if request body mentions any session in trajectoriesMap
-        try {
-          var reqBody = args[1] && args[1].body;
-          if (reqBody) {
-            var bStr = (typeof reqBody === 'string') ? reqBody : new TextDecoder().decode(reqBody);
-            for (var tid in trajectoriesMap) {
-              if (bStr.indexOf(tid) !== -1) {
-                return makeGrpcWeb({
-                  trajectory: trajectoriesMap[tid],
-                  status: 1,
-                  numTotalSteps: trajectoriesMap[tid].steps.length
-                });
-              }
-            }
-          }
-        } catch (e) {}
         return window._origNativeFetch.apply(this, args);
       }
 
       if (url.indexOf('GetCascadeTrajectorySteps') !== -1 || url.indexOf('getCascadeTrajectorySteps') !== -1) {
         var prewarmedCid = resolvePrewarmedCid(args);
-        if (prewarmedCid) {
+        if (prewarmedCid && trajectoriesMap[prewarmedCid]) {
           var targetTraj = trajectoriesMap[prewarmedCid];
           return makeGrpcWeb({
             steps: targetTraj.steps
