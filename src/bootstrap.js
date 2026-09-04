@@ -684,6 +684,7 @@
       projectId: 'second-test-project',
       trajectoryMetadata: {
         projectId: 'second-test-project',
+        environmentId: 'second-test-project-env',
         workspaces: [{ workspaceUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project' }]
       },
       workspaces: [{ workspaceUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project' }]
@@ -900,6 +901,13 @@ var defaultMcpStates = [
           var pathname = window.location.pathname || '';
           for (var pid of prewarmedIds) {
             if (pathname.indexOf(pid) !== -1) return pid;
+          }
+        } catch (e) {}
+
+        try {
+          var search = window.location.search || '';
+          for (var pid of prewarmedIds) {
+            if (search.indexOf(pid) !== -1) return pid;
           }
         } catch (e) {}
 
