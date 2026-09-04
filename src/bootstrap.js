@@ -646,23 +646,37 @@
     var stepsList = [];
     var stepId = 0;
     (lj.turns || []).forEach(function(turn) {
+      // User Step
       stepsList.push({
-        stepId: stepId,
-        type: 0,
-        status: 1,
-        stepPayload: {
+        id: stepId,
+        type: 14,
+        status: 3,
+        metadata: {},
+        userInput: {
+          userResponse: turn.user,
+          items: [{ text: turn.user }]
+        },
+        step: {
           case: 'userInput',
           value: {
-            userQuery: turn.user
+            userResponse: turn.user,
+            items: [{ text: turn.user }]
           }
         }
       });
       stepId++;
+
+      // Planner Step
       stepsList.push({
-        stepId: stepId,
-        type: 1,
-        status: 1,
-        stepPayload: {
+        id: stepId,
+        type: 15,
+        status: 3,
+        metadata: {},
+        plannerResponse: {
+          response: turn.model,
+          modifiedResponse: turn.model
+        },
+        step: {
           case: 'plannerResponse',
           value: {
             response: turn.model,
