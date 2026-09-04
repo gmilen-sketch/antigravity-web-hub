@@ -546,7 +546,11 @@
       lastModifiedTime: s.lastModifiedTime,
       trajectoryType: 0,
       projectId: 'second-test-project',
-      workspaces: [{ workspaceUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project' }]
+      workspaces: [{ workspaceUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project' }],
+      annotations: {
+        archived: true,
+        archivedTime: '2026-09-04T05:00:00Z'
+      }
     };
 
     trajectoriesMap[s.id] = {
@@ -987,6 +991,19 @@ var defaultMcpStates = [
       if (url.indexOf('UpdateConversationAnnotations') !== -1 || url.indexOf('updateConversationAnnotations') !== -1) {
         var prewarmedCid = resolvePrewarmedCid(args);
         if (prewarmedCid) {
+          try {
+            var reqBody = args[1] && args[1].body;
+            if (reqBody) {
+              var str = (typeof reqBody === 'string') ? reqBody : new TextDecoder().decode(reqBody);
+              var m = str.match(/\{.*\}/s);
+              if (m) {
+                var parsed = JSON.parse(m[0]);
+                if (summariesMap[prewarmedCid]) {
+                  summariesMap[prewarmedCid].annotations = parsed.annotations || parsed;
+                }
+              }
+            }
+          } catch (e) {}
           return makeGrpcWeb({});
         }
         return window._origNativeFetch.apply(this, args);
@@ -996,7 +1013,9 @@ var defaultMcpStates = [
           url.indexOf('GetConversationAnnotations') !== -1 || url.indexOf('getConversationAnnotations') !== -1) {
         var prewarmedCid = resolvePrewarmedCid(args);
         if (prewarmedCid) {
-          return makeGrpcWeb({ annotations: {} });
+          var targetSummary = summariesMap[prewarmedCid];
+          var ann = (targetSummary && targetSummary.annotations) ? targetSummary.annotations : {};
+          return makeGrpcWeb({ annotations: ann });
         }
         return window._origNativeFetch.apply(this, args);
       }
