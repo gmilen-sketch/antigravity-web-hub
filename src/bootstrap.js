@@ -13,12 +13,16 @@
     localStorage.setItem('antigravity.isLoggedIn', 'true');
     localStorage.setItem('hasAuthToken', 'true');
     localStorage.setItem('isAuthenticated', 'true');
+    localStorage.setItem('projectsGroupBy', 'project');
+    localStorage.setItem('projectsGroupByInternal', 'project');
+    localStorage.setItem('selectedProjectId', 'second-test-project');
+    localStorage.setItem('currentSection', 'second-test-project');
     if (!localStorage.getItem('antigravity_selected_model')) {
       localStorage.setItem('antigravity_selected_model', '354');
     }
   } catch (e) {}
 
-    var defaultItems = {
+  var defaultItems = {
     'antigravityOnboarding': 'true',
     'antigravityUnifiedStateSync.onboarding': 'true',
     'antigravity.isLoggedIn': 'true',
@@ -31,8 +35,8 @@
     'recentProjects': JSON.stringify(['second-test-project', 'file:///home/admin_mgenchev_altostrat_com/second-test-project']),
     'lastOpenedWorkspace': 'file:///home/admin_mgenchev_altostrat_com/second-test-project',
     'currentSection': 'second-test-project',
-    'projectsGroupBy': '"project"',
-    'projectsGroupByInternal': '"project"'
+    'projectsGroupBy': 'project',
+    'projectsGroupByInternal': 'project'
   };
 
   var listeners = new Set();
@@ -701,6 +705,9 @@
       lastModifiedTime: lj.lastModifiedTime,
       trajectoryType: 0,
       projectId: 'second-test-project',
+      trajectoryMetadata: {
+        projectId: 'second-test-project'
+      },
       workspaces: [{ workspaceUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project' }]
     };
 
@@ -709,6 +716,9 @@
       cascadeId: lj.id,
       trajectoryType: 0,
       projectId: 'second-test-project',
+      trajectoryMetadata: {
+        projectId: 'second-test-project'
+      },
       workspaces: [{ workspaceUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project' }],
       steps: stepsList
     };
@@ -798,7 +808,7 @@ var defaultMcpStates = [
         var savedModel = parseInt(localStorage.getItem('antigravity_selected_model') || String(currentSelectedModel), 10);
         var activeCid = 'session-1-productivity';
         try {
-          var matchActive = window.location.pathname.match(/session-[0-9]-[a-z-]+/);
+          var matchActive = window.location.pathname.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|session-[0-9]-[a-z-]+)/i);
           if (matchActive) activeCid = matchActive[0];
         } catch (e) {}
 
@@ -827,21 +837,6 @@ var defaultMcpStates = [
                   { conversationId: 'c0729e55-1fa5-466d-b84f-8c9698f4bce1', title: 'Agentic SRE: Regional Incident RCA & Circuit Breaker', lastModifiedTime: '2026-09-03T21:58:30Z' },
                   { conversationId: '29906621-eb9a-42f5-ba0f-3760d24729fc', title: 'Vibe Coder: Service Health Monitor Dashboard', lastModifiedTime: '2026-09-03T22:03:00Z' }
                 ]
-              },
-              {
-                uri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project',
-                label: 'second-test-project',
-                sectionKind: {
-                  case: 'workspaceSection',
-                  value: {
-                    workspaceUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project',
-                    folderUris: ['file:///home/admin_mgenchev_altostrat_com/second-test-project']
-                  }
-                },
-                displayState: {
-                  isCollapsed: false
-                },
-                conversations: []
               }
             ]
           },
