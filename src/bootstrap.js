@@ -701,11 +701,6 @@
       lastModifiedTime: lj.lastModifiedTime,
       trajectoryType: 0,
       projectId: 'second-test-project',
-      trajectoryMetadata: {
-        projectId: 'second-test-project',
-        environmentId: 'second-test-project-env',
-        workspaces: [{ workspaceUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project' }]
-      },
       workspaces: [{ workspaceUri: 'file:///home/admin_mgenchev_altostrat_com/second-test-project' }]
     };
 
