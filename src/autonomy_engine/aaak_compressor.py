@@ -2,7 +2,12 @@ import re
 import json
 from typing import Dict, Any, List, Union
 
+
 class AAAKCompressor:
+    """AAAK 3-Pass Deterministic Token Compressor (Clean-Room Standalone Edition).
+    Preserves 100% of Chain-of-Thought traces (`thinking` and `thought` keys).
+    """
+
     ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
     ANSI_OSC_RE = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
 
@@ -45,7 +50,7 @@ class AAAKCompressor:
         packed = []
         for call in tool_calls:
             name = call.get("name") or call.get("function", {}).get("name") or "tool"
-            args = call.get("arguments") or call.get("function", {}).get("arguments") or {}
+            args = call.get("args") or call.get("arguments") or call.get("function", {}).get("arguments") or {}
             if isinstance(args, str):
                 try:
                     args = json.loads(args)
@@ -83,6 +88,10 @@ class AAAKCompressor:
         compressed = dict(step)
         if "content" in compressed and isinstance(compressed["content"], str):
             compressed["content"] = cls.compress_text(compressed["content"], repo_root=repo_root)
+        # Preserve both canonical `thinking` and legacy `thought` keys without erasure
+        for cot_key in ("thinking", "thought"):
+            if cot_key in compressed and isinstance(compressed[cot_key], str):
+                compressed[cot_key] = cls.pass1_strip_noise(compressed[cot_key])
         if "tool_calls" in compressed and isinstance(compressed["tool_calls"], list):
             compressed["packed_action_tuples"] = cls.pass3_pack_action_tuples(compressed["tool_calls"])
         if "tool_output" in compressed:

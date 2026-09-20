@@ -100,6 +100,15 @@ if [ -d "src/autonomy_engine" ]; then
   chmod +x "$BIN_DIR/autonomy_engine"/*.py 2>/dev/null || true
 fi
 
+# Install Lifecycle Hooks module files (PreInvocation & Stop Gate)
+if [ -d "src/hooks" ]; then
+  echo "Installing Lifecycle Hooks (PreInvocation KG Grounding & Black-Hat Stop Gate)..."
+  mkdir -p "$BIN_DIR/hooks"
+  cp -r src/hooks/* "$BIN_DIR/hooks/"
+  chown -R "$RUN_USER:$RUN_USER" "$BIN_DIR/hooks"
+  chmod +x "$BIN_DIR/hooks"/*.py 2>/dev/null || true
+fi
+
 # Install Google Workspace MCP module
 if [ -d "src/mcp_google_workspace" ]; then
   echo "Installing Google Workspace MCP module..."
@@ -111,8 +120,8 @@ if [ -d "src/mcp_google_workspace" ]; then
   fi
 fi
 
-# ---- 4. Configure MCP Servers (mcp_config.json) across all discovery search paths ----
-echo "Configuring mcp_config.json across all search paths..."
+# ---- 4. Configure MCP Servers (mcp_config.json) & Lifecycle Hooks (hooks.json) ----
+echo "Configuring mcp_config.json and hooks.json across all search paths..."
 sudo -u "$RUN_USER" python3 -c "
 import json, os
 bin_dir = '$BIN_DIR'
@@ -139,6 +148,29 @@ mcp_cfg = {
   }
 }
 
+hooks_cfg = {
+  'knowledge-graph-grounding': {
+    'enabled': True,
+    'PreInvocation': [
+      {
+        'type': 'command',
+        'command': f'python3 {bin_dir}/hooks/kg_pre_invocation_hook.py',
+        'timeout': 5
+      }
+    ]
+  },
+  'black-hat-completion-gate': {
+    'enabled': True,
+    'Stop': [
+      {
+        'type': 'command',
+        'command': f'python3 {bin_dir}/hooks/agent_stop_black_hat_gate.py',
+        'timeout': 15
+      }
+    ]
+  }
+}
+
 paths = [
   f'{home}/.gemini/config/mcp_config.json',
   f'{home}/.gemini/config/mcp.json',
@@ -159,9 +191,22 @@ for p in paths:
       json.dump(mcp_cfg, f, indent=2)
   except Exception as e:
     pass
+
+hook_paths = [
+  f'{home}/.gemini/config/hooks.json',
+  f'{home}/.gemini/antigravity/hooks.json'
+]
+
+for hp in hook_paths:
+  try:
+    os.makedirs(os.path.dirname(hp), exist_ok=True)
+    with open(hp, 'w') as f:
+      json.dump(hooks_cfg, f, indent=2)
+  except Exception as e:
+    pass
 "
 
-# ---- 5. Install Community Skills and configure skills.json ----
+# ---- 5. Install Community Skills and Custom Subagents (black-hat-critic) ----
 if [ -d "skills" ]; then
   echo "Installing Community Skills catalog..."
   for skill_path in skills/*; do
@@ -181,12 +226,36 @@ if [ -d "skills" ]; then
   done
 fi
 
-# ---- 6. Bypass Onboarding Screen with jetski_state.pbtxt ----
-echo "Writing onboarding bypass state..."
+if [ -d "agents" ]; then
+  echo "Installing Custom Subagents (black-hat-critic)..."
+  for agent_path in agents/*; do
+    if [ -d "$agent_path" ]; then
+      agent_name=$(basename "$agent_path")
+      for dest in "$RUN_HOME/.gemini/config/agents/$agent_name" \
+                  "$RUN_HOME/.gemini/antigravity/agents/$agent_name" \
+                  "$RUN_HOME/.gemini/agents/$agent_name" \
+                  "$RUN_HOME/.agents/agents/$agent_name" \
+                  "/mnt/data/projects/.agents/agents/$agent_name"; do
+        mkdir -p "$(dirname "$dest")"
+        rm -rf "$dest"
+        cp -r "$agent_path" "$dest"
+        chown -R "$RUN_USER:$RUN_USER" "$dest" 2>/dev/null || true
+      done
+    fi
+  done
+fi
+
+# ---- 6. Bypass Onboarding Screen with jetski_state.pbtxt (Preserve Existing State) ----
+echo "Checking onboarding state..."
 if [ -f "config/jetski_state.pbtxt" ]; then
-  cp config/jetski_state.pbtxt "$RUN_HOME/.gemini/antigravity/jetski_state.pbtxt"
-  cp config/jetski_state.pbtxt "$BIN_DIR/jetski_state.pbtxt"
-  chown "$RUN_USER:$RUN_USER" "$RUN_HOME/.gemini/antigravity/jetski_state.pbtxt" "$BIN_DIR/jetski_state.pbtxt"
+  if [ ! -f "$RUN_HOME/.gemini/antigravity/jetski_state.pbtxt" ]; then
+    cp config/jetski_state.pbtxt "$RUN_HOME/.gemini/antigravity/jetski_state.pbtxt"
+    chown "$RUN_USER:$RUN_USER" "$RUN_HOME/.gemini/antigravity/jetski_state.pbtxt"
+  fi
+  if [ ! -f "$BIN_DIR/jetski_state.pbtxt" ]; then
+    cp config/jetski_state.pbtxt "$BIN_DIR/jetski_state.pbtxt"
+    chown "$RUN_USER:$RUN_USER" "$BIN_DIR/jetski_state.pbtxt"
+  fi
 fi
 
 # ---- 7. Configure Nginx Reverse Proxy & Static Web App ----

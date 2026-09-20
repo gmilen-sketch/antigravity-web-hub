@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """
-Continuous Spaced Half-Life Decay & Adamic-Adar Link Predictor for Antigravity Web Hub.
-Calculates:
-1. Ebbinghaus temporal confidence decay: C(e, t) = C_0 * exp(-lambda * delta_t)
-2. Structural edge prediction via Adamic-Adar index: AA(u, v) = sum_{z in N(u) cap N(v)} 1 / log(|N(z)|)
+Continuous Spaced Half-Life Decay, Anderson ACT-R Power-Law Decay & Adamic-Adar Link Predictor.
+Includes ACT-R Task Activation Clamping Floor (A_min = -2.0) so dormant project nodes
+remain reactivatable without decaying to negative infinity.
 """
 
 import os
@@ -11,15 +10,19 @@ import sys
 import json
 import math
 import time
+import calendar
 import argparse
 from collections import defaultdict
 from typing import Dict, List, Any
 
+ACTR_CLAMP_FLOOR = -2.0
+ACTR_DECAY_PARAM = 0.5
+
 DEFAULT_GRAPH_PATHS = [
     os.path.expanduser(os.environ.get("KG_JSON_PATH", "/mnt/data/knowledge_graph.json")),
     os.path.expanduser("~/.gemini/antigravity/knowledge_graph.json"),
-    os.path.expanduser("~/Projects/Jarvis/knowledge_graph.json")
 ]
+
 
 def find_active_graph_path() -> str:
     for path in DEFAULT_GRAPH_PATHS:
@@ -27,10 +30,11 @@ def find_active_graph_path() -> str:
             return path
     return DEFAULT_GRAPH_PATHS[0]
 
+
 def compute_adamic_adar_scores(graph_data: Dict[str, Any], score_threshold: float = 0.60) -> List[Dict[str, Any]]:
     nodes = {n["id"]: n for n in graph_data.get("nodes", []) if "id" in n}
     adj = defaultdict(set)
-    
+
     for e in graph_data.get("edges", []):
         s, t = e.get("source"), e.get("target")
         if s and t:
@@ -61,33 +65,43 @@ def compute_adamic_adar_scores(graph_data: Dict[str, Any], score_threshold: floa
                     "properties": {
                         "predicted_by": "adamic_adar",
                         "aa_score": round(aa_score, 4),
-                        "confidence": confidence
-                    }
+                        "confidence": confidence,
+                    },
                 })
 
     return predicted_edges
 
+
 def apply_temporal_decay(graph_data: Dict[str, Any], half_life_days: float = 30.0) -> int:
+    """Applies both Ebbinghaus confidence decay and Anderson ACT-R power-law base-level
+    activation B_i = max(A_min, ln(sum t_k^(-d))) with floor clamping at A_min = -2.0.
+    """
     now = time.time()
     decay_lambda = math.log(2.0) / (half_life_days * 86400.0)
     decayed_count = 0
 
     for n in graph_data.get("nodes", []):
         props = n.setdefault("properties", {})
-        c_0 = props.get("confidence", props.get("confidence_score", 1.0))
+        c_0 = float(props.get("confidence", props.get("confidence_score", 1.0)))
         updated_iso = n.get("updated_at") or props.get("updated_at")
-        
+
         if updated_iso:
             try:
-                ts = time.mktime(time.strptime(str(updated_iso)[:19], "%Y-%m-%dT%H:%M:%S"))
-                delta_t = max(0.0, now - ts)
+                ts = calendar.timegm(time.strptime(str(updated_iso)[:19], "%Y-%m-%dT%H:%M:%S"))
+                delta_t = max(1.0, now - ts)
                 decayed = c_0 * math.exp(-decay_lambda * delta_t)
                 props["decayed_confidence"] = round(decayed, 4)
+
+                # Anderson ACT-R power-law base-level activation with clamping floor
+                raw_actr = math.log(delta_t ** (-ACTR_DECAY_PARAM))
+                clamped_actr = max(ACTR_CLAMP_FLOOR, round(raw_actr, 4))
+                props["actr_base_activation"] = clamped_actr
                 decayed_count += 1
             except Exception:
                 pass
 
     return decayed_count
+
 
 def run_optimization(graph_path: str = None, predict: bool = True, decay: bool = True) -> Dict[str, Any]:
     active_path = graph_path or find_active_graph_path()
@@ -102,8 +116,7 @@ def run_optimization(graph_path: str = None, predict: bool = True, decay: bool =
         predictions = compute_adamic_adar_scores(graph_data)
         results["predicted_edges_count"] = len(predictions)
         results["predicted_edges"] = predictions
-        
-        # Add new predicted edges with confidence threshold
+
         existing_pairs = {(e["source"], e["target"]) for e in graph_data.get("edges", [])}
         added = 0
         for p in predictions:
@@ -123,10 +136,11 @@ def run_optimization(graph_path: str = None, predict: bool = True, decay: bool =
 
     return results
 
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Adamic-Adar Link Predictor & Decay Engine")
+    parser = argparse.ArgumentParser(description="Adamic-Adar Link Predictor & ACT-R Decay Engine")
     parser.add_argument("--predict", action="store_true", default=True, help="Predict missing structural edges")
-    parser.add_argument("--decay", action="store_true", default=True, help="Apply confidence score half-life decay")
+    parser.add_argument("--decay", action="store_true", default=True, help="Apply confidence & ACT-R decay")
     parser.add_argument("--graph-path", type=str, default=None, help="Custom path to knowledge_graph.json")
     args = parser.parse_args()
 
