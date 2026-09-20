@@ -52,8 +52,8 @@ gcloud compute addresses delete antigravity-nlb-ip --region="$REGION" --project=
 # 8. Firewall Rules & SSL Certs
 echo "==> [8/8] Deleting Firewall Rules & SSL Certificates..."
 gcloud compute firewall-rules delete allow-antigravity-web-secondproject --project="$PROJECT_ID" --account="$ACCOUNT" --quiet 2>/dev/null || true
-gcloud compute ssl-certificates list --project="$PROJECT_ID" --account="$ACCOUNT" --format="value(name)" 2>/dev/null | grep "antigravity" | while read -r cert; do
-  gcloud compute ssl-certificates delete "$cert" --global --project="$PROJECT_ID" --account="$ACCOUNT" --quiet 2>/dev/null || true
+(gcloud compute ssl-certificates list --project="$PROJECT_ID" --account="$ACCOUNT" --format="value(name)" 2>/dev/null | grep "antigravity" || true) | while read -r cert; do
+  [ -n "$cert" ] && gcloud compute ssl-certificates delete "$cert" --global --project="$PROJECT_ID" --account="$ACCOUNT" --quiet 2>/dev/null || true
 done
 
 echo "============================================================"

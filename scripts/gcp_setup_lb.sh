@@ -24,7 +24,8 @@ set -a; . ./.env; set +a
 : "${GOOGLE_CLOUD_PROJECT:?set in .env}"
 : "${VM_NAME:?add to .env — the jumpstation VM name}"
 : "${VM_ZONE:?add to .env — e.g. us-central1-a}"
-IAP_USERS="${IAP_USERS:-user:$(gcloud config get-value account 2>/dev/null || echo 'admin@example.com')}"
+export CLOUDSDK_CORE_ACCOUNT="${SSH_USER:-${GCP_ACCOUNT:-admin@mgenchev.altostrat.com}}"
+IAP_USERS="${IAP_USERS:-user:${CLOUDSDK_CORE_ACCOUNT}}"
 
 
 # Auto-detect actual VM zone if instance already exists in GCP

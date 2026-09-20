@@ -12,6 +12,7 @@ set -a; . ./.env; set +a
 : "${GOOGLE_CLOUD_PROJECT:?}"
 : "${VM_NAME:?add to .env}"
 : "${VM_ZONE:?add to .env}"
+export CLOUDSDK_CORE_ACCOUNT="${SSH_USER:-${GCP_ACCOUNT:-admin@mgenchev.altostrat.com}}"
 
 # Auto-detect actual VM zone if instance already exists in GCP
 DETECTED_ZONE=$(gcloud --quiet --project="$GOOGLE_CLOUD_PROJECT" compute instances list --filter="name=$VM_NAME" --format="value(zone)" 2>/dev/null | head -n 1 || true)
