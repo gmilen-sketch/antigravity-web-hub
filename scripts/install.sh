@@ -258,23 +258,10 @@ if [ -f "config/jetski_state.pbtxt" ]; then
   fi
 fi
 
-# ---- 7. Configure Nginx Reverse Proxy & Static Web App ----
+# ---- 7. Configure Nginx Reverse Proxy ----
 if command -v nginx >/dev/null 2>&1; then
-  echo "Installing static Web App assets to /var/www/html/..."
+  echo "Configuring Nginx Reverse Proxy (serving embedded UI from language_server :8081)..."
   mkdir -p /var/www/html
-  if [ -f "$REPO_ROOT/assets/agyhub_ui_bundle.zip" ]; then
-    python3 -m zipfile -e "$REPO_ROOT/assets/agyhub_ui_bundle.zip" /var/www/html/
-  elif [ -f "assets/agyhub_ui_bundle.zip" ]; then
-    python3 -m zipfile -e "assets/agyhub_ui_bundle.zip" /var/www/html/
-  elif [ -f "$REPO_ROOT/assets/jetbox_ui_bundle.zip" ]; then
-    python3 -m zipfile -e "$REPO_ROOT/assets/jetbox_ui_bundle.zip" /var/www/html/
-  elif [ -f "assets/jetbox_ui_bundle.zip" ]; then
-    python3 -m zipfile -e "assets/jetbox_ui_bundle.zip" /var/www/html/
-  fi
-  install -m 0644 src/bootstrap.js /var/www/html/bootstrap.js
-  if [ -f "/var/www/html/index.html" ] && ! grep -q "bootstrap.js" /var/www/html/index.html; then
-    sed -i 's|<head>|<head><script src="/bootstrap.js"></script>|' /var/www/html/index.html
-  fi
   install -m 0644 config/nginx.conf /etc/nginx/conf.d/antigravity-web.conf
   rm -f /etc/nginx/sites-enabled/default /etc/nginx/sites-available/default 2>/dev/null || true
   nginx -t && systemctl reload nginx || systemctl restart nginx
