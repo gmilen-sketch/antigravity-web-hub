@@ -31,6 +31,14 @@ def load_kg() -> Dict[str, Any]:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             if isinstance(data, dict) and data.get("nodes"):
+                if path != KG_CACHE_PATH and not os.path.exists(KG_CACHE_PATH):
+                    try:
+                        tmp = f"{KG_CACHE_PATH}.tmp.{os.getpid()}"
+                        with open(tmp, "w", encoding="utf-8") as wf:
+                            json.dump(data, wf)
+                        os.replace(tmp, KG_CACHE_PATH)
+                    except Exception:
+                        pass
                 return data
         except Exception:
             continue
