@@ -40,8 +40,8 @@ chown -R "$RUN_USER:$RUN_USER" /mnt/data 2>/dev/null || true
 
 # ---- 1. Antigravity language_server binary ---------------------
 BIN_DIR="$RUN_HOME/.gemini/antigravity/bin"
-mkdir -p "$BIN_DIR" "$RUN_HOME/.gemini/config" "$RUN_HOME/.agents" /mnt/data/projects/.agents
-chown -R "$RUN_USER:$RUN_USER" "$RUN_HOME/.gemini" "$RUN_HOME/.agents" /mnt/data/projects 2>/dev/null || true
+mkdir -p "$BIN_DIR" "$RUN_HOME/.gemini/config" "$RUN_HOME/.agents" "$RUN_HOME/second-test-project" "$RUN_HOME/workspace" /mnt/data/projects/.agents
+chown -R "$RUN_USER:$RUN_USER" "$RUN_HOME/.gemini" "$RUN_HOME/.agents" "$RUN_HOME/second-test-project" "$RUN_HOME/workspace" /mnt/data/projects 2>/dev/null || true
 
 if [ -f "$REPO_ROOT/bin/language_server" ]; then
   echo "Installing language_server from repository package..."

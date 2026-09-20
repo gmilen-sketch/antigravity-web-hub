@@ -4,6 +4,23 @@ All notable changes to the **Antigravity Web Hub** project will be documented in
 
 ---
 
+## [3.2.0] - 2026-09-20 — 🧠 Clean-Room Autonomy Suite, Black-Hat Stop Gate & Zero-Loss Upgrades
+
+### 🚀 Major Additions & Clean-Room Ports
+- **Turn-0 `PreInvocation` Grounding Hook (`src/hooks/kg_pre_invocation_hook.py`)**: Automatically injects entity properties from `/dev/shm/kg_warm_cache.json` before turn generation in $<1\,\text{ms}$.
+- **Black-Hat Critic `Stop` Hook Gate v3.0 (`src/hooks/agent_stop_black_hat_gate.py`)**: Enforces turn-scoped default-deny on state mutations, requiring independent subagent verification (`agents/black-hat-critic/agent.md`, $\ge 2$ tool steps + `CRITIC_VERDICT: APPROVED`), self-throttling at `MAX_FORCED_CONTINUATIONS = 2`.
+- **Nightly Dreaming v4.0 Upgrades (`src/knowledge_graph/dreaming_engine.py`)**:
+  - Added Anderson ACT-R power-law decay with clamping floor ($A_{\min} = -2.0$) in `kg_decay_link_predictor.py`.
+  - Ported 2-Tier Resilient Steer Harvester (`resilient_steer_harvester.py`) with SHA-256 content-hashed idempotent graph absorption.
+  - Ported 16-pattern Session Efficiency & Token Waste Analyzer (`session_waste_analyzer.py`).
+  - Added AAAK 3-Pass Compressor CoT preservation fix (`thinking` + `thought` keys).
+- **Clean-Room Provisioning & Non-Destructive Upgrades**:
+  - Updated `scripts/install.sh` to create default workspace directories (`$RUN_HOME/second-test-project` & `$RUN_HOME/workspace`) so `StartCascade` never fails with `file does not exist` on fresh VMs.
+  - Added non-destructive state check preserving existing `jetski_state.pbtxt`, `conversations/`, and `knowledge_graph.json` when upgrading live instances.
+  - Enforced `export CLOUDSDK_CORE_ACCOUNT` in `gcp_setup_vm.sh` and `gcp_setup_lb.sh`.
+
+---
+
 ## [3.1.1] - 2026-08-24 — 🛠️ Standalone Binary Packaging & In-Browser Resilience
 
 ### 🛠️ Production Fixes & Hardening
