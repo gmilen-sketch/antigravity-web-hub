@@ -4,6 +4,27 @@ All notable changes to the **Antigravity Web Hub** project will be documented in
 
 ---
 
+## [3.2.2] - 2026-09-21 — 🎯 7-Model UI Dropdown Allowlist Mapping & End-to-End Streaming
+
+### 🚀 Fixes & Model Routing Enhancements
+- **Allowlisted `language_server` Enum Mapping (`src/ccpa_mock.py`)**: Mapped all 7 UI dropdown models to native allowlisted `language_server` enums so interactive UI prompts stream end-to-end without protocol envelope drops:
+  - `Gemini 3.8 Flash` (Default) $\rightarrow$ `enum 352` (`MODEL_GOOGLE_GEMINI_RIFTRUNNER_THINKING_LOW` $\rightarrow$ `gemini-3.8-flash`)
+  - `Gemini 3.7 Flash` $\rightarrow$ `enum 350` (`MODEL_GOOGLE_GEMINI_INFINITYJET` $\rightarrow$ `gemini-3.7-flash`)
+  - `Gemini 3.6 Flash` $\rightarrow$ `enum 348` (`MODEL_GOOGLE_GEMINI_2_5_FLASH` $\rightarrow$ `gemini-3.6-flash`)
+  - `Gemini 3.5 Flash Lite` $\rightarrow$ `enum 330` (`MODEL_GOOGLE_GEMINI_2_5_FLASH_LITE` $\rightarrow$ `gemini-3.5-flash-lite`)
+  - `Claude Opus 5 (Vertex AI)` $\rightarrow$ `enum 290` (`MODEL_CLAUDE_4_OPUS` $\rightarrow$ `claude-opus-5`)
+  - `Claude Sonnet 5 (Vertex AI)` $\rightarrow$ `enum 333` (`MODEL_CLAUDE_4_5_SONNET` $\rightarrow$ `claude-sonnet-5`)
+  - `Claude Fable 5 (Next-Gen)` $\rightarrow$ `enum 340` (`MODEL_CLAUDE_4_5_HAIKU` $\rightarrow$ `claude-fable-5`)
+
+---
+
+## [3.2.1] - 2026-09-21 — ⚡ Gemini 3.8 Flash (Default), Claude Opus 5 & Claude Sonnet 5
+
+### 🌟 Model Catalog Upgrades
+- **Production Model Upgrades (`src/ccpa_mock.py`)**: Enabled **Gemini 3.8 Flash** as default production model alongside **Claude Opus 5 (Vertex AI)** and **Claude Sonnet 5 (Vertex AI)** across UI dropdown rendering and Vertex AI forwarding.
+
+---
+
 ## [3.2.0] - 2026-09-20 — 🧠 Clean-Room Autonomy Suite, Black-Hat Stop Gate & Zero-Loss Upgrades
 
 ### 🚀 Major Additions & Clean-Room Ports

@@ -1,41 +1,46 @@
-# Antigravity Web Hub (v3.1.0 - Stable Release)
+# Antigravity Web Hub (v3.2.2 - Stable Release)
 
-[![Release](https://img.shields.io/badge/Release-v3.1.0--Stable-brightgreen.svg)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/Release-v3.2.2--Stable-brightgreen.svg)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/Google%20Cloud-C2%20Compute--Optimized-blue.svg)](https://cloud.google.com/compute/docs/compute-optimized-machines#c2_series)
 [![Security](https://img.shields.io/badge/Security-IAP%20Zero--Trust-success.svg)](https://cloud.google.com/iap)
 
-An enterprise-ready, headless GCP VM deployment and architecture for Google Antigravity Web, featuring native optimizations, multi-model routing, and robust API integrations.
+An enterprise-ready, headless GCP VM deployment and architecture for Google Antigravity Web, featuring native optimizations, multi-model routing, clean-room autonomy hooks, and robust API integrations.
 
 ---
 
-## 🌟 What's New in v3.1.0
+## 🌟 What's New in v3.2.2
 
-### 1. 🎨 Dynamic Multi-Model Catalog Routing (`src/ccpa_mock.py`)
-- **Native UI Dropdown Selection**: Directly switch between cutting-edge Google Gemini and Anthropic Claude models inside the Antigravity chat input:
-  - **`Gemini 3.7 Flash`** (`MODEL_GOOGLE_GEMINI_RIFTRUNNER_THINKING_LOW`)
-  - **`Gemini 3.6 Flash`** (`MODEL_GOOGLE_GEMINI_2_5_FLASH`)
-  - **`Gemini 3.5 Flash Lite`** (`MODEL_GOOGLE_GEMINI_2_5_FLASH_LITE`)
-  - **`Claude 3.7 Sonnet`** (`MODEL_ANTHROPIC_CLAUDE_3_5_SONNET`)
-  - **`Claude Opus 5`** (`MODEL_ANTHROPIC_CLAUDE_OPUS_4_5`)
-  - **`Claude Fable 5`** (`MODEL_ANTHROPIC_CLAUDE_3_5_HAIKU`)
+### 1. 🎨 Dynamic 7-Model Catalog Routing (`src/ccpa_mock.py`)
+- **Native UI Dropdown Selection & End-to-End Streaming**: Directly switch between all 7 allowlisted Google Gemini and Anthropic Claude models inside the Antigravity chat input (mapped to native `language_server` enums for zero-drop streaming):
+  - **`Gemini 3.8 Flash` (Default)** (`enum 352` / `MODEL_GOOGLE_GEMINI_RIFTRUNNER_THINKING_LOW` $\rightarrow$ `gemini-3.8-flash`)
+  - **`Gemini 3.7 Flash`** (`enum 350` / `MODEL_GOOGLE_GEMINI_INFINITYJET` $\rightarrow$ `gemini-3.7-flash`)
+  - **`Gemini 3.6 Flash`** (`enum 348` / `MODEL_GOOGLE_GEMINI_2_5_FLASH` $\rightarrow$ `gemini-3.6-flash`)
+  - **`Gemini 3.5 Flash Lite`** (`enum 330` / `MODEL_GOOGLE_GEMINI_2_5_FLASH_LITE` $\rightarrow$ `gemini-3.5-flash-lite`)
+  - **`Claude Opus 5 (Vertex AI)`** (`enum 290` / `MODEL_CLAUDE_4_OPUS` $\rightarrow$ `claude-opus-5`)
+  - **`Claude Sonnet 5 (Vertex AI)`** (`enum 333` / `MODEL_CLAUDE_4_5_SONNET` $\rightarrow$ `claude-sonnet-5`)
+  - **`Claude Fable 5 (Next-Gen)`** (`enum 340` / `MODEL_CLAUDE_4_5_HAIKU` $\rightarrow$ `claude-fable-5`)
 - **Zero-Latency Protocol Translation**: Dynamic request/response mapping to Vertex AI endpoints via Application Default Credentials (ADC) without requiring third-party API keys.
 
-### 2. 🔌 Standard FastMCP Servers Architecture
+### 2. 🛡️ Clean-Room Autonomy Hooks & Adversarial Governance (`src/hooks/`)
+- **Turn-0 `PreInvocation` Grounding Hook (`src/hooks/kg_pre_invocation_hook.py`)**: Automatically hydrates and injects entity subgraphs from `/dev/shm/kg_warm_cache.json` before turn generation in $<1\,\text{ms}$ (with automatic cache hydration on service boot and cache misses).
+- **Black-Hat Critic `Stop` Hook Gate v3.0 (`src/hooks/agent_stop_black_hat_gate.py`)**: Enforces turn-scoped default-deny verification on state mutations, requiring independent subagent audit (`agents/black-hat-critic/agent.md`, $\ge 2$ tool steps + `CRITIC_VERDICT: APPROVED`) with self-throttling at `MAX_FORCED_CONTINUATIONS = 2`.
+
+### 3. 🔌 Standard FastMCP Servers Architecture
 Auxiliary agent tools are refactored into standard **Model Context Protocol (MCP)** servers running over STDIO JSON-RPC (`transport="stdio"`):
 - **`knowledge_graph`** (`src/knowledge_graph/kg_mcp_server.py`): Long-term memory search, concept upsertion, directional edge creation, and compact subgraph extraction.
-- **`autonomy_engine`** (`src/autonomy_engine/mcp_autonomy_hub.py`): AAAK 3-pass token compression, 4-voice polyphonic factual retrieval, and context envelope hydration.
+- **`autonomy_engine`** (`src/autonomy_engine/mcp_autonomy_hub.py`): AAAK 3-pass token compression (with full CoT `thinking`/`thought` preservation), 4-voice polyphonic factual retrieval, and context envelope hydration.
 - **`deep_research`** (`src/mcp_deep_research.py`): Autonomous agentic research loop with live DuckDuckGo web search and URL parsing.
 - **`google_workspace`** (`src/mcp_google_workspace/index.js`): Headless operations with Gmail, Calendar, Drive, and Sheets.
 
-### 3. 🧠 Knowledge Graph Long-Term Memory & 0ms RAM Cache
+### 4. 🧠 Knowledge Graph Long-Term Memory & 0ms RAM Cache
 - **SQLite-WAL Backend**: Bitemporal property graph stored at `~/.gemini/antigravity/knowledge_graph.json` with SQLite write-ahead logging.
 - **Shared Memory Cache (`/dev/shm/kg_warm_cache.json`)**: Pre-warmed atomic RAM cache enabling instant, 0ms latency sub-graph context injection for active agent trajectories.
 
-### 4. 🌙 Automated Nightly Dreaming Engine (23:50 UTC)
+### 5. 🌙 Automated Nightly Dreaming Engine v4.0 (23:50 UTC)
 - **Self-Optimizing Knowledge Graph**: Scheduled via user crontab on the VM (`src/knowledge_graph/dreaming_engine.py`):
-  1. Harvests session traces across the previous 24 hours.
-  2. Applies forensic error penalties to evaluate agent trajectory quality.
-  3. Executes ACT-R activation decay on memory nodes.
+  1. Harvests session traces across the previous 24 hours via 2-Tier Resilient Steer Harvester (`resilient_steer_harvester.py`).
+  2. Runs 16-pattern Session Efficiency & Token Waste Analyzer (`session_waste_analyzer.py`).
+  3. Executes Anderson ACT-R power-law decay with clamping floor ($A_{\min} = -2.0$) in `kg_decay_link_predictor.py`.
   4. Predicts and attaches associative cross-session semantic edges.
   5. Atomically regenerates the `/dev/shm/` RAM cache.
 
