@@ -147,41 +147,41 @@ def map_model_name(requested_model_from_payload):
     if "333" in req_str or "334" in req_str or "281" in req_str or "282" in req_str or "claude" in req_lower or "sonnet" in req_lower:
         return "claude-sonnet-5"
         
-    # 4. Gemini 3.8 Flash (enum 353 / THINKING_HIGH or "3.8")
-    if "353" in req_str or "thinking_high" in req_lower or "3.8" in req_lower:
+    # 4. Gemini 3.8 Flash (enum 352 / RIFTRUNNER_THINKING_LOW or "3.8")
+    if "352" in req_str or "353" in req_str or "riftrunner" in req_lower or "3.8" in req_lower:
         return "gemini-3.8-flash"
 
-    # 5. Gemini 3.7 Flash (enum 352 / THINKING_LOW or "3.7")
-    if "352" in req_str or "3.7" in req_lower:
+    # 5. Gemini 3.7 Flash (enum 350 / INFINITYJET or "3.7")
+    if "350" in req_str or "infinityjet" in req_lower or "3.7" in req_lower:
         return "gemini-3.7-flash"
         
-    # 6. Gemini 3.6 Flash (enum 350, 1001)
-    if "350" in req_str or "1001" in req_str or "3.6" in req_lower:
+    # 6. Gemini 3.6 Flash (enum 348, 1001 or "3.6")
+    if "348" in req_str or "1001" in req_str or "3.6" in req_lower:
         return "gemini-3.6-flash"
         
     # 7. Gemini 3.5 Flash Lite (enum 330, 344)
     if "330" in req_str or "344" in req_str or "lite" in req_lower or "light" in req_lower:
         return "gemini-3.5-flash-lite"
         
-    # 8. Gemini 3.5 Flash (enum 348, 1000)
-    if "348" in req_str or "1000" in req_str or "3.5" in req_lower:
+    # 8. Gemini 3.5 Flash (enum 1000)
+    if "1000" in req_str or "3.5" in req_lower:
         return "gemini-3.5-flash"
         
     return "gemini-3.8-flash"
 
 PORT = 8083
 
-DEFAULT_MODEL_ENUM = 353
-DEFAULT_MODEL_NAME = "MODEL_GOOGLE_GEMINI_RIFTRUNNER_THINKING_HIGH"
+DEFAULT_MODEL_ENUM = 352
+DEFAULT_MODEL_NAME = "MODEL_GOOGLE_GEMINI_RIFTRUNNER_THINKING_LOW"
 
 DROPDOWN_MODELS = [
-    ("Gemini 3.8 Flash",              353),  # MODEL_GOOGLE_GEMINI_RIFTRUNNER_THINKING_HIGH -> gemini-3.8-flash
-    ("Gemini 3.7 Flash",              352),  # MODEL_GOOGLE_GEMINI_RIFTRUNNER_THINKING_LOW  -> gemini-3.7-flash
-    ("Gemini 3.6 Flash",              350),  # MODEL_GOOGLE_GEMINI_INFINITYJET              -> gemini-3.6-flash
-    ("Gemini 3.5 Flash Lite",         330),  # MODEL_GOOGLE_GEMINI_2_5_FLASH_LITE           -> gemini-3.5-flash-lite
-    ("Claude Opus 5 (Vertex AI)",     290),  # MODEL_CLAUDE_4_OPUS                          -> claude-opus-5
-    ("Claude Sonnet 5 (Vertex AI)",   333),  # MODEL_CLAUDE_4_5_SONNET                      -> claude-sonnet-5
-    ("Claude Fable 5 (Next-Gen)",     340),  # MODEL_CLAUDE_4_5_HAIKU                       -> claude-fable-5
+    ("Gemini 3.8 Flash",              352),  # MODEL_GOOGLE_GEMINI_RIFTRUNNER_THINKING_LOW -> gemini-3.8-flash
+    ("Gemini 3.7 Flash",              350),  # MODEL_GOOGLE_GEMINI_INFINITYJET             -> gemini-3.7-flash
+    ("Gemini 3.6 Flash",              348),  # MODEL_GOOGLE_GEMINI_2_5_FLASH               -> gemini-3.6-flash
+    ("Gemini 3.5 Flash Lite",         330),  # MODEL_GOOGLE_GEMINI_2_5_FLASH_LITE          -> gemini-3.5-flash-lite
+    ("Claude Opus 5 (Vertex AI)",     290),  # MODEL_CLAUDE_4_OPUS                         -> claude-opus-5
+    ("Claude Sonnet 5 (Vertex AI)",   333),  # MODEL_CLAUDE_4_5_SONNET                     -> claude-sonnet-5
+    ("Claude Fable 5 (Next-Gen)",     340),  # MODEL_CLAUDE_4_5_HAIKU                      -> claude-fable-5
 ]
 
 GEMINI_SUPPORTED_MIME_TYPES = {
