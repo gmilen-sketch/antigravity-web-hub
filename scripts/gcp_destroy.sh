@@ -5,8 +5,8 @@ set -euo pipefail
 # 🧹 [Antigravity Hub] GCP Infrastructure Clean Destruction Script
 # ==============================================================================
 
-PROJECT_ID="${GOOGLE_CLOUD_PROJECT:-second-test-project-393510}"
-ACCOUNT="${GCP_ACCOUNT:-admin@mgenchev.altostrat.com}"
+PROJECT_ID="${GOOGLE_CLOUD_PROJECT:?set GOOGLE_CLOUD_PROJECT}"
+ACCOUNT="${GCP_ACCOUNT:?set GCP_ACCOUNT}"
 ZONE="${GCP_ZONE:-us-central1-c}"
 REGION="${GCP_REGION:-us-central1}"
 

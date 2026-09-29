@@ -24,7 +24,7 @@ set -a; . ./.env; set +a
 : "${GOOGLE_CLOUD_PROJECT:?set in .env}"
 : "${VM_NAME:?add to .env — the jumpstation VM name}"
 : "${VM_ZONE:?add to .env — e.g. us-central1-a}"
-export CLOUDSDK_CORE_ACCOUNT="${SSH_USER:-${GCP_ACCOUNT:-admin@mgenchev.altostrat.com}}"
+export CLOUDSDK_CORE_ACCOUNT="${SSH_USER:-${GCP_ACCOUNT:?set GCP_ACCOUNT (or SSH_USER) in .env}}"
 IAP_USERS="${IAP_USERS:-user:${CLOUDSDK_CORE_ACCOUNT}}"
 
 
@@ -126,9 +126,20 @@ gcloud --project=$PROJECT compute ssl-certificates create $CERT_NAME \
 echo "→ URL map, target HTTP & HTTPS proxies (using cert $CERT_NAME), forwarding rules…"
 gcloud --project=$PROJECT compute url-maps create ${NAME_PREFIX}-um --default-service=${NAME_PREFIX}-bs 2>/dev/null || true
 
-# Target HTTP proxy + Port 80 forwarding rule (instant access without waiting for SSL cert)
-gcloud --project=$PROJECT compute target-http-proxies create ${NAME_PREFIX}-http-proxy \
-   --url-map=${NAME_PREFIX}-um 2>/dev/null || true
+# Port 80 → 301 to HTTPS. Never route plain HTTP to the backend service.
+gcloud --quiet --project=$PROJECT compute url-maps import ${NAME_PREFIX}-http-redirect-um --global --source=- <<EOF
+name: ${NAME_PREFIX}-http-redirect-um
+defaultUrlRedirect:
+  httpsRedirect: true
+  redirectResponseCode: MOVED_PERMANENTLY_DEFAULT
+EOF
+if gcloud --project=$PROJECT compute target-http-proxies describe ${NAME_PREFIX}-http-proxy --global >/dev/null 2>&1; then
+  gcloud --project=$PROJECT compute target-http-proxies update ${NAME_PREFIX}-http-proxy \
+     --global --url-map=${NAME_PREFIX}-http-redirect-um
+else
+  gcloud --project=$PROJECT compute target-http-proxies create ${NAME_PREFIX}-http-proxy \
+     --global --url-map=${NAME_PREFIX}-http-redirect-um
+fi
 gcloud --project=$PROJECT compute forwarding-rules create ${NAME_PREFIX}-http-fr \
    --global --address=${NAME_PREFIX}-ip --target-http-proxy=${NAME_PREFIX}-http-proxy --ports=80 2>/dev/null || true
 
@@ -149,11 +160,53 @@ gcloud --project=$PROJECT compute forwarding-rules create ${NAME_PREFIX}-fr \
 
 if [ "${ENABLE_IAP:-false}" = "true" ]; then
   echo "→ Enabling IAP on backend service…"
-  gcloud --quiet --project=$PROJECT services enable iap.googleapis.com 2>/dev/null || true
-  gcloud --quiet --project=$PROJECT iap oauth-brands create \
-    --application_title="Antigravity Web Hub" \
-    --support_email=$(gcloud config get-value account 2>/dev/null) 2>/dev/null || true
-  gcloud --quiet --project=$PROJECT compute backend-services update ${NAME_PREFIX}-bs --global --iap=enabled 2>/dev/null || true
+  gcloud --quiet --project=$PROJECT services enable iap.googleapis.com
+
+  # OAuth client selection.
+  # - Google-managed (default) IAP client only admits users whose Workspace
+  #   customer matches the project's org. On orgs without a Workspace customer
+  #   (CNU / Enterprise Trials sandboxes, "owner": {}) IAP returns Error 604
+  #   (RESOURCE_DASHER_CUSTOMER_ID_MISSING); cross-org users get Error 602.
+  # - The legacy `gcloud iap oauth-brands/oauth-clients` API is shut down
+  #   (March 2026), so a custom client must be created in Console:
+  #   1. Google Auth Platform > Branding: create branding (else "Auto Generate
+  #      Credentials" stays disabled).
+  #   2. Google Auth Platform > Audience: External. In "Testing" status only
+  #      listed test users can sign in -> add every IAP member as a test user
+  #      (one per chip) or publish the app.
+  #   3. Security > IAP > <backend> > Settings > Custom OAuth: clear any
+  #      browser-autofilled values > Auto Generate Credentials > Save.
+  #   Then set IAP_OAUTH_CLIENT_ID / IAP_OAUTH_CLIENT_SECRET in .env (keep the
+  #   secret in Secret Manager, never in git).
+  ORG_ID=$(gcloud projects get-ancestors "$PROJECT" --format='value(id,type)' 2>/dev/null | awk '$2=="organization"{print $1}')
+  ORG_DIRECTORY_CUSTOMER=""
+  if [ -n "$ORG_ID" ]; then
+    ORG_DIRECTORY_CUSTOMER=$(gcloud organizations describe "$ORG_ID" --format='value(owner.directoryCustomerId)' 2>/dev/null || true)
+  fi
+
+  if [ -n "${IAP_OAUTH_CLIENT_ID:-}" ] && [ -n "${IAP_OAUTH_CLIENT_SECRET:-}" ]; then
+    echo "  using custom OAuth client ${IAP_OAUTH_CLIENT_ID%%.*}…"
+    gcloud --quiet --project=$PROJECT compute backend-services update ${NAME_PREFIX}-bs --global \
+      --iap=enabled,oauth2-client-id="$IAP_OAUTH_CLIENT_ID",oauth2-client-secret="$IAP_OAUTH_CLIENT_SECRET"
+  elif [ -z "$ORG_DIRECTORY_CUSTOMER" ]; then
+    echo "✖ Project $PROJECT is under org '${ORG_ID:-none}' with no Workspace directoryCustomerId." >&2
+    echo "  The Google-managed IAP OAuth client will fail with Error 604 for every user." >&2
+    echo "  Create a custom OAuth client (Console > Security > IAP > ${NAME_PREFIX}-bs > Settings >" >&2
+    echo "  Custom OAuth > Auto Generate Credentials, Audience=External) and set" >&2
+    echo "  IAP_OAUTH_CLIENT_ID / IAP_OAUTH_CLIENT_SECRET in .env, then re-run." >&2
+    echo "  Enabling IAP with the default client anyway so the endpoint is never left open." >&2
+    gcloud --quiet --project=$PROJECT compute backend-services update ${NAME_PREFIX}-bs --global --iap=enabled
+    IAP_CUSTOM_CLIENT_MISSING=true
+  else
+    echo "  using Google-managed OAuth client (org $ORG_ID, customer $ORG_DIRECTORY_CUSTOMER) — only users in that Workspace can sign in"
+    gcloud --quiet --project=$PROJECT compute backend-services update ${NAME_PREFIX}-bs --global --iap=enabled
+  fi
+
+  IAP_STATE=$(gcloud --project=$PROJECT compute backend-services describe ${NAME_PREFIX}-bs --global --format='value(iap.enabled)')
+  if [ "$IAP_STATE" != "True" ]; then
+    echo "✖ IAP is not enabled on ${NAME_PREFIX}-bs (iap.enabled=$IAP_STATE). Aborting." >&2
+    exit 1
+  fi
 
   echo "→ Granting IAP HTTPS resource accessor to $IAP_USERS…"
   IFS=',' read -ra USERS <<< "$IAP_USERS"
@@ -171,6 +224,10 @@ echo
 echo "✅ Done."
 echo "   Public URL : https://$HOST/  (waits up to ~15 min for cert provisioning)"
 echo "   IAP users  : $IAP_USERS"
+if [ "${IAP_CUSTOM_CLIENT_MISSING:-false}" = "true" ]; then
+  echo "   ⚠  IAP custom OAuth client NOT configured — sign-in will fail with Error 604 until"
+  echo "      IAP_OAUTH_CLIENT_ID / IAP_OAUTH_CLIENT_SECRET are set and this script is re-run."
+fi
 echo
 echo "Add to .env:"
 echo "   PUBLIC_HOSTNAME=$HOST"

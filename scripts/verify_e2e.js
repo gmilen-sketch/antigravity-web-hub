@@ -208,7 +208,7 @@ async function verify() {
   console.log('------------------------------------------------------------');
 
   const screenshot = await send('Page.captureScreenshot', { format: 'png' });
-  const scPath = '/usr/local/google/home/mgenchev/.gemini/jetski/brain/dc82200c-f596-42b7-8ba0-0e25321e9cd2/antigravity_e2e_verified.png';
+  const scPath = process.env.E2E_SCREENSHOT_PATH || require('path').join(process.cwd(), 'antigravity_e2e_verified.png');
   fs.writeFileSync(scPath, Buffer.from(screenshot.data, 'base64'));
   console.log('🎉 [PASS] E2E Verification Complete! Screenshot saved to antigravity_e2e_verified.png');
   console.log('============================================================');
