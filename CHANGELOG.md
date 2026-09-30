@@ -7,6 +7,7 @@ All notable changes to the **Antigravity Web Hub** project will be documented in
 ## [3.3.0] - 2026-09-30 — 🧠 Open Knowledge Format (OKF v0.2), 2-Stage Goldfish-Judge Gate v4.3, P0/P1 Quality Engines & 5-Subagent Roster
 
 ### 🚀 Major Additions & Clean-Room Ports (`AGW-1` – `AGW-5`)
+- **Security Remediation (`src/ccpa_mock.py` — Issue #23 / `CWE-918`)**: Added `validate_upstream_url()` (`urllib.parse.urlsplit` validation asserting `scheme == 'http'`, `hostname == '127.0.0.1'`, `port == 8081`, and `username is None`) and `sanitize_forwarded_headers()` stripping `Metadata-Flavor` and `X-Google-Metadata-Request` headers across `forward_request` and `forward_and_stream`.
 - **`AGW-1` (Lifecycle Hooks Upgrade — `src/hooks/`)**:
   - **2-Stage Stateless Goldfish $\rightarrow$ Isolated Judge `Stop` Gate (`agent_stop_black_hat_gate.py` `v4.3`)**: Enforces `C1–C8` forensic verification contracts across `black-hat-goldfish` and `black-hat-judge`, retains single-stage `black-hat-critic` fallback unless `BH_GATE_STRICT_TWO_STAGE=1`, adds in-process attached verification (`run_attached_black_hat_verification`), pre-critic bottom summary gate, and `(?<![>-])>>?` arrow guard.
   - **Turn-1 Pinned KV-Cache `PreInvocation` Hook (`kg_pre_invocation_hook.py` `v3.3`)**: Strips `<CONTEXT_SUMMARY>` before entity matching, enforces `score >= 45`, returns `{}` on zero matches, traverses 1-hop associative edges, supports `aliases[]`, and co-bundles Top-3 `okf:*` concept dossiers.

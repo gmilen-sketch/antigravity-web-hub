@@ -34,6 +34,7 @@ from knowledge_graph.validate_okf import validate_kb_bundle
 from hooks.black_hat_analyzer import scan_target
 from hooks.agent_stop_black_hat_gate import evaluate as evaluate_stop_gate
 from hooks.kg_pre_invocation_hook import extract_recent_inputs, resolve_hybrid_entities
+from ccpa_mock import validate_upstream_url, sanitize_forwarded_headers, forward_request
 
 
 class TestAutonomyKGHooks(unittest.TestCase):
@@ -274,6 +275,40 @@ class TestAutonomyKGHooks(unittest.TestCase):
         good_payload = json.dumps({"toolName": "run_command", "toolArgs": {"CommandLine": "echo hello"}})
         p_good = subprocess.run([sys.executable, dispatcher], input=good_payload, text=True, capture_output=True)
         self.assertIn('"decision": "allow"', p_good.stdout)
+
+
+    def test_11_cwe918_ssrf_host_pivoting_and_metadata_header_stripping(self):
+        """Verifies Issue #23 (CWE-918): blocks @169.254.169.254 userinfo host-pivoting and strips Metadata headers."""
+        for malicious_path in [
+            "@169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token",
+            "//169.254.169.254/computeMetadata/v1/",
+            "/\\169.254.169.254/computeMetadata/v1/",
+            "http://169.254.169.254/computeMetadata/v1/",
+        ]:
+            with self.assertRaises(ValueError):
+                validate_upstream_url(malicious_path)
+
+        status, _, body = forward_request(
+            "@169.254.169.254/computeMetadata/v1/",
+            "GET",
+            {"Metadata-Flavor": "Google", "X-Google-Metadata-Request": "true"},
+            b"",
+        )
+        self.assertEqual(status, 400)
+        self.assertIn(b"Invalid upstream path", body)
+
+        valid_url = validate_upstream_url("/exa.language_server_pb.LanguageServerService/GetUserStatus")
+        self.assertEqual(valid_url, "http://127.0.0.1:8081/exa.language_server_pb.LanguageServerService/GetUserStatus")
+
+        cleaned_headers = sanitize_forwarded_headers({
+            "Metadata-Flavor": "Google",
+            "X-Google-Metadata-Request": "true",
+            "Content-Type": "application/json",
+        })
+        self.assertNotIn("Metadata-Flavor", cleaned_headers)
+        self.assertNotIn("X-Google-Metadata-Request", cleaned_headers)
+        self.assertEqual(cleaned_headers.get("Content-Type"), "application/json")
+        self.assertEqual(cleaned_headers.get("Host"), "127.0.0.1:8081")
 
 
 if __name__ == "__main__":

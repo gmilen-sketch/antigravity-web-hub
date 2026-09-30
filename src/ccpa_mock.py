@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import urllib.request
+import urllib.parse
 import urllib.error
 import subprocess
 import time
@@ -265,18 +266,54 @@ def _is_unset_enum(v):
         return m is None or m == 0 or m == "" or m == "MODEL_UNSPECIFIED"
     return False
 
-def forward_request(path, method, headers, body):
-    _server_ready.wait(timeout=12.0)
+STRIPPED_PROXY_HEADERS = frozenset({
+    "host",
+    "content-length",
+    "connection",
+    "accept-encoding",
+    "metadata-flavor",
+    "x-google-metadata-request",
+})
+
+
+def validate_upstream_url(path: str) -> str:
+    """Validates path starts with a single '/' and asserts urlsplit points strictly to http://127.0.0.1:8081 (CWE-918)."""
+    if not isinstance(path, str) or not path.startswith("/") or path.startswith("//") or path.startswith("/\\"):
+        raise ValueError(f"Rejected invalid upstream proxy path: {path!r}")
     url = f"http://127.0.0.1:8081{path}"
+    parsed = urllib.parse.urlsplit(url)
+    if (
+        parsed.scheme != "http"
+        or parsed.hostname != "127.0.0.1"
+        or parsed.port != 8081
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        raise ValueError(f"Rejected SSRF host-pivoting attempt in upstream URL: {url!r}")
+    return url
+
+
+def sanitize_forwarded_headers(headers) -> dict:
+    """Strips hop-by-hop and GCE Metadata headers (Metadata-Flavor, X-Google-Metadata-Request)."""
     fw_headers = {}
     for k, v in headers.items():
-        lk = k.lower()
-        if lk in ("host", "content-length", "connection", "accept-encoding"):
+        if k.lower() in STRIPPED_PROXY_HEADERS:
             continue
         fw_headers[k] = v
     fw_headers["Host"] = "127.0.0.1:8081"
     fw_headers["Accept-Encoding"] = "identity"
-    
+    return fw_headers
+
+
+def forward_request(path, method, headers, body):
+    _server_ready.wait(timeout=12.0)
+    try:
+        url = validate_upstream_url(path)
+    except ValueError as ve:
+        logging.warning(f"Blocked SSRF / invalid upstream path in forward_request: {ve}")
+        return 400, {}, b"Bad Request: Invalid upstream path"
+    fw_headers = sanitize_forwarded_headers(headers)
+
     req = urllib.request.Request(url, data=body, headers=fw_headers, method=method)
     try:
         with urllib.request.urlopen(req, timeout=120) as response:
@@ -503,16 +540,16 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
 
     def forward_and_stream(self, path, method, headers, body):
         _server_ready.wait(timeout=12.0)
-        url = f"http://127.0.0.1:8081{path}"
-        fw_headers = {}
-        for k, v in headers.items():
-            lk = k.lower()
-            if lk in ("host", "content-length", "connection", "accept-encoding"):
-                continue
-            fw_headers[k] = v
-        fw_headers["Host"] = "127.0.0.1:8081"
-        fw_headers["Accept-Encoding"] = "identity"
-        
+        try:
+            url = validate_upstream_url(path)
+        except ValueError as ve:
+            logging.warning(f"Blocked SSRF / invalid upstream path in forward_and_stream: {ve}")
+            self.send_response(400)
+            self.end_headers()
+            self.wfile.write(b"Bad Request: Invalid upstream path")
+            return
+        fw_headers = sanitize_forwarded_headers(headers)
+
         req = urllib.request.Request(url, data=body, headers=fw_headers, method=method)
         # Use longer timeout for state streaming to avoid network/gateway errors
         timeout = 1800 if "StreamAgentStateUpdates" in path or "streamAgentStateUpdates" in path else 120
@@ -1435,11 +1472,12 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b"{}")
 
-socketserver.ThreadingTCPServer.allow_reuse_address = True
-with socketserver.ThreadingTCPServer(("127.0.0.1", PORT), CCPAHandler) as httpd:
-    logging.info(f"Starting CCPA Mock Server on port {PORT}...")
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        pass
+if __name__ == "__main__":
+    socketserver.ThreadingTCPServer.allow_reuse_address = True
+    with socketserver.ThreadingTCPServer(("127.0.0.1", PORT), CCPAHandler) as httpd:
+        logging.info(f"Starting CCPA Mock Server on port {PORT}...")
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            pass
 
