@@ -32,8 +32,12 @@ ENABLE_PLAYWRIGHT="${ENABLE_PLAYWRIGHT:-true}"
 MODULE_PIDS=""
 
 if [ "$ENABLE_KNOWLEDGE_GRAPH" = "true" ] && [ -f "$BIN_DIR/knowledge_graph/kg_mcp_server.py" ]; then
-    echo "Starting Knowledge Graph Long-Term Memory FastMCP..."
+    echo "Starting Knowledge Graph Long-Term Memory FastMCP & Hydrating OKF v0.2 Serving Cache..."
     python3 "$BIN_DIR/knowledge_graph/init_knowledge_graph.py" 2>/dev/null || true
+    if [ -f "$BIN_DIR/knowledge_graph/okf_knowledge_compiler.py" ] && [ -d "$HOME/kb" ]; then
+        python3 "$BIN_DIR/knowledge_graph/okf_knowledge_compiler.py" --kb-root "$HOME/kb" > /dev/null 2>&1 || true
+    fi
+    python3 "$BIN_DIR/knowledge_graph/dreaming_engine.py" --hours 24 > /dev/null 2>&1 || true
     python3 "$BIN_DIR/knowledge_graph/kg_mcp_server.py" > /tmp/kg_mcp.log 2>&1 &
     MODULE_PIDS="$MODULE_PIDS $!"
 fi

@@ -100,13 +100,31 @@ if [ -d "src/autonomy_engine" ]; then
   chmod +x "$BIN_DIR/autonomy_engine"/*.py 2>/dev/null || true
 fi
 
-# Install Lifecycle Hooks module files (PreInvocation & Stop Gate)
+# Install Lifecycle Hooks module files (PreInvocation, PreToolUse Sentinel & Stop Gate)
 if [ -d "src/hooks" ]; then
-  echo "Installing Lifecycle Hooks (PreInvocation KG Grounding & Black-Hat Stop Gate)..."
-  mkdir -p "$BIN_DIR/hooks"
+  echo "Installing Lifecycle Hooks (PreInvocation KG Grounding, PreToolUse Sentinel & 2-Stage Black-Hat Stop Gate)..."
+  mkdir -p "$BIN_DIR/hooks/rules"
   cp -r src/hooks/* "$BIN_DIR/hooks/"
   chown -R "$RUN_USER:$RUN_USER" "$BIN_DIR/hooks"
   chmod +x "$BIN_DIR/hooks"/*.py 2>/dev/null || true
+fi
+
+# Install Open Knowledge Format (OKF v0.2) kb/ bundle and Diagram Renderer v15.2
+if [ -d "kb" ]; then
+  echo "Installing Open Knowledge Format (OKF v0.2) kb/ bundle..."
+  mkdir -p "$RUN_HOME/kb" "$BIN_DIR/kb"
+  cp -r kb/* "$RUN_HOME/kb/"
+  cp -r kb/* "$BIN_DIR/kb/"
+  chown -R "$RUN_USER:$RUN_USER" "$RUN_HOME/kb" "$BIN_DIR/kb"
+  sudo -u "$RUN_USER" python3 "$BIN_DIR/knowledge_graph/okf_knowledge_compiler.py" --kb-root "$RUN_HOME/kb" || true
+fi
+
+if [ -d "src/diagram_renderer" ]; then
+  echo "Installing Diagram Renderer v15.2 module..."
+  mkdir -p "$BIN_DIR/diagram_renderer"
+  cp -r src/diagram_renderer/* "$BIN_DIR/diagram_renderer/"
+  chown -R "$RUN_USER:$RUN_USER" "$BIN_DIR/diagram_renderer"
+  chmod +x "$BIN_DIR/diagram_renderer"/*.py 2>/dev/null || true
 fi
 
 # Install Google Workspace MCP module
@@ -155,6 +173,16 @@ hooks_cfg = {
       {
         'type': 'command',
         'command': f'python3 {bin_dir}/hooks/kg_pre_invocation_hook.py',
+        'timeout': 5
+      }
+    ]
+  },
+  'sentinel-pre-tool-gate': {
+    'enabled': True,
+    'PreToolUse': [
+      {
+        'type': 'command',
+        'command': f'python3 {bin_dir}/hooks/sentinel_dispatch.py',
         'timeout': 5
       }
     ]

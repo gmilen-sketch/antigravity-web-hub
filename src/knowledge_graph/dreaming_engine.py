@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Antigravity Web Hub - Daily Dreaming Engine & Self-Optimization Pipeline (v4.0 Clean-Room Edition).
+Antigravity Web Hub - Daily Dreaming Engine & Self-Optimization Pipeline (v5.2 Clean-Room Edition).
 Analyzes session transcripts using RHU rubric invariants, harvests mid-task user steers,
-evaluates W1-W16 token waste patterns, applies AAAK 3-pass compression, optimizes KG topology,
-and atomically warms the unified /dev/shm/kg_warm_cache.json schema.
+evaluates W1-W16 token waste patterns, applies AAAK 3-pass compression, runs the 8-mutant
+Anti-Overfitting Saboteur gate, compiles Open Knowledge Format (OKF v0.2) dossiers (`kb/`),
+emits `/dev/shm/dreaming_improvements_for_reasoner.json`, and atomically warms `/dev/shm/kg_warm_cache.json`.
 """
 
 import os
@@ -18,16 +19,25 @@ from typing import Dict, List, Any
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 SRC_DIR = os.path.dirname(SCRIPT_DIR)
+REPO_ROOT = os.path.dirname(SRC_DIR)
 if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
 from knowledge_graph.kg_decay_link_predictor import run_optimization, find_active_graph_path
+from knowledge_graph.okf_knowledge_compiler import sync_kb_to_graph
+from knowledge_graph.kg_serving_cache import hydrate_serving_cache, WARM_CACHE_PATH
 from autonomy_engine.aaak_compressor import AAAKCompressor
 from autonomy_engine.resilient_steer_harvester import harvest_steers_from_steps
 from autonomy_engine.session_waste_analyzer import analyze_single_session
+from autonomy_engine.anti_overfitting_gate import AntiOverfittingGate
+from autonomy_engine.workspace_hygiene_gate import audit_workspace_hygiene
 
-WARM_CACHE_PATH = "/dev/shm/kg_warm_cache.json" if os.path.exists("/dev/shm") else "/tmp/kg_warm_cache.json"
 DATA_DIR = os.path.expanduser(os.environ.get("ANTIGRAVITY_DATA_DIR", "/mnt/data/.gemini/antigravity"))
+REASONER_PAYLOAD_PATH = (
+    "/dev/shm/dreaming_improvements_for_reasoner.json"
+    if os.path.exists("/dev/shm")
+    else "/tmp/dreaming_improvements_for_reasoner.json"
+)
 
 
 def discover_session_traces(lookback_hours: int = 24) -> List[str]:
@@ -106,38 +116,23 @@ def evaluate_trace_rhu(trace_path: str) -> Dict[str, Any]:
 
 
 def warm_shared_memory_cache(graph_path: str):
-    """Atomically pre-warms 0ms shared memory RAM cache using unified schema
-    (`version`, `updated_at`, `nodes`, `edges`) compatible with kg_engine.py and PreInvocation hook.
-    """
-    if not os.path.exists(graph_path):
-        return
-    with open(graph_path, "r", encoding="utf-8") as f:
-        graph = json.load(f)
-
-    warm_data = {
-        "version": graph.get("version", "1.0"),
-        "updated_at": time.time(),
-        "warmed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "nodes": graph.get("nodes", []),
-        "edges": graph.get("edges", []),
-    }
-
-    cache_dir = os.path.dirname(WARM_CACHE_PATH)
-    os.makedirs(cache_dir, exist_ok=True)
-    with tempfile.NamedTemporaryFile("w", dir=cache_dir, delete=False, encoding="utf-8") as tf:
-        json.dump(warm_data, tf)
-        temp_name = tf.name
-    os.replace(temp_name, WARM_CACHE_PATH)
+    """Atomically pre-warms 0ms shared memory RAM cache using unified schema."""
+    hydrate_serving_cache(graph_path, WARM_CACHE_PATH)
 
 
 def run_dreaming_pipeline(lookback_hours: int = 24, graph_path: str = None) -> Dict[str, Any]:
-    """Master Dreaming & Self-Optimization Orchestrator."""
+    """Master Dreaming v5.2 & Self-Optimization Orchestrator."""
     start_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     traces = discover_session_traces(lookback_hours)
     evals = [evaluate_trace_rhu(t) for t in traces]
     avg_score = round(sum(e["quality_score"] for e in evals) / len(evals), 1) if evals else 98.5
 
-    all_steers = [s for e in evals for s in e["steers_harvested"] if s.get("confidence", 0) >= 0.90]
+    sdt_gate = AntiOverfittingGate()
+    saboteur_res = sdt_gate.run_saboteur_benchmark()
+
+    raw_steers = [s for e in evals for s in e["steers_harvested"] if s.get("confidence", 0) >= 0.90]
+    all_steers = [s for s in raw_steers if sdt_gate.inspect_candidate_rule(s.get("rule", ""))["passed"]]
+
     total_raw_chars = sum(e["raw_chars"] for e in evals)
     total_comp_chars = sum(e["compressed_chars"] for e in evals)
     compression_ratio = round(
@@ -153,7 +148,6 @@ def run_dreaming_pipeline(lookback_hours: int = 24, graph_path: str = None) -> D
         try:
             with open(active_graph, "r", encoding="utf-8") as f:
                 gdata = json.load(f)
-            # Prune legacy unhashed auto steer nodes if present
             gdata["nodes"] = [
                 n for n in gdata.get("nodes", [])
                 if not str(n.get("id", "")).startswith("steer:auto_")
@@ -180,14 +174,41 @@ def run_dreaming_pipeline(lookback_hours: int = 24, graph_path: str = None) -> D
         except Exception:
             pass
 
-    # 3. Atomic RAM Cache Warming (Unified Schema)
+    # 3. Synchronize Open Knowledge Format (OKF v0.2) Dossiers (`kb/`) into KG & Warm Cache
+    kb_candidates = [
+        os.path.join(REPO_ROOT, "kb"),
+        os.path.join(SRC_DIR, "kb"),
+        os.path.expanduser("~/kb"),
+        os.path.expanduser("~/.gemini/antigravity/bin/kb"),
+    ]
+    kb_dir = next((c for c in kb_candidates if os.path.isdir(c)), kb_candidates[0])
+    okf_res = sync_kb_to_graph(kb_root=kb_dir, graph_path=active_graph)
+
+    # 4. Emit Reasoning Payload for `dreaming-improvement-reasoner` Subagent
+    reasoner_payload = {
+        "version": "5.2",
+        "generated_at": start_iso,
+        "traces_evaluated": len(traces),
+        "average_quality_score": avg_score,
+        "approved_steers": all_steers[:15],
+        "saboteur_benchmark": saboteur_res,
+    }
+    try:
+        with open(REASONER_PAYLOAD_PATH, "w", encoding="utf-8") as rf:
+            json.dump(reasoner_payload, rf, indent=2)
+    except Exception:
+        pass
+
+    # 5. Workspace Hygiene Audit & Atomic RAM Cache Warming
+    hygiene_res = audit_workspace_hygiene(REPO_ROOT)
     warm_shared_memory_cache(active_graph)
 
-    summary_md = f"""# 🌙 Antigravity Web Hub: Daily Dreaming Engine Briefing (v4.0)
+    summary_md = f"""# 🌙 Antigravity Web Hub: Daily Dreaming Engine Briefing (v5.2)
 * **Execution Timestamp**: `{start_iso}`
 * **Session Traces Evaluated**: `{len(traces)}` (past {lookback_hours}h) | **Average Quality Score**: `{avg_score}%`
 * **AAAK Token Compression Savings**: `{compression_ratio}%` character reduction
-* **User Steering Directives Harvested**: `{len(all_steers)}` explicit rules evaluated
+* **User Steering Directives Harvested**: `{len(all_steers)}` verified rules (Saboteur Recall: `{saboteur_res['saboteur_recall_pct']}%`)
+* **Open Knowledge Format (OKF v0.2) Dossiers Synced**: `{okf_res.get('synced_dossiers', 0)}`
 * **Knowledge Graph Topology**: `{kg_res.get('added_edges_count', 0)}` predicted edges added via Adamic-Adar
 * **ACT-R & Temporal Decay**: Applied across `{kg_res.get('decayed_nodes_count', 0)}` graph entities
 * **0ms RAM Cache**: Atomically warmed at `{WARM_CACHE_PATH}`
@@ -198,19 +219,24 @@ def run_dreaming_pipeline(lookback_hours: int = 24, graph_path: str = None) -> D
 
     return {
         "status": "ok",
+        "version": "5.2",
         "timestamp": start_iso,
         "traces_evaluated": len(traces),
         "average_quality_score": avg_score,
         "aaak_compression_pct": compression_ratio,
         "steers_harvested_count": len(all_steers),
+        "okf_sync": okf_res,
+        "saboteur_gate": saboteur_res,
+        "workspace_hygiene": hygiene_res,
         "kg_optimization": kg_res,
         "warm_cache_path": WARM_CACHE_PATH,
+        "reasoner_payload_path": REASONER_PAYLOAD_PATH,
         "summary_file": summary_path,
     }
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Antigravity Web Hub Daily Dreaming Engine")
+    parser = argparse.ArgumentParser(description="Antigravity Web Hub Daily Dreaming Engine v5.2")
     parser.add_argument("--hours", type=int, default=24, help="Lookback hours for session logs")
     parser.add_argument("--graph-path", type=str, default=None, help="Custom graph path")
     args = parser.parse_args()

@@ -4,6 +4,27 @@ All notable changes to the **Antigravity Web Hub** project will be documented in
 
 ---
 
+## [3.3.0] - 2026-09-30 — 🧠 Open Knowledge Format (OKF v0.2), 2-Stage Goldfish-Judge Gate v4.3, P0/P1 Quality Engines & 5-Subagent Roster
+
+### 🚀 Major Additions & Clean-Room Ports (`AGW-1` – `AGW-5`)
+- **`AGW-1` (Lifecycle Hooks Upgrade — `src/hooks/`)**:
+  - **2-Stage Stateless Goldfish $\rightarrow$ Isolated Judge `Stop` Gate (`agent_stop_black_hat_gate.py` `v4.3`)**: Enforces `C1–C8` forensic verification contracts across `black-hat-goldfish` and `black-hat-judge`, retains single-stage `black-hat-critic` fallback unless `BH_GATE_STRICT_TWO_STAGE=1`, adds in-process attached verification (`run_attached_black_hat_verification`), pre-critic bottom summary gate, and `(?<![>-])>>?` arrow guard.
+  - **Turn-1 Pinned KV-Cache `PreInvocation` Hook (`kg_pre_invocation_hook.py` `v3.3`)**: Strips `<CONTEXT_SUMMARY>` before entity matching, enforces `score >= 45`, returns `{}` on zero matches, traverses 1-hop associative edges, supports `aliases[]`, and co-bundles Top-3 `okf:*` concept dossiers.
+  - **`PreToolUse` Sentinel Dispatcher (`sentinel_dispatch.py` & `rules/`)**: Modular rule plugins enforcing `destructive_commands.py`, `deprecated_models.py`, `file_bounds.py`, and `rule_11_anonymization.py`.
+- **`AGW-2` (5-Subagent Clean-Room Roster — `agents/`)**:
+  - Added `black-hat-goldfish`, `black-hat-judge`, `dreaming-improvement-reasoner`, `workspace-housekeeper`, and upgraded `black-hat-critic`.
+- **`AGW-3` (Open Knowledge Format `OKF v0.2`, P0/P1 Quality Engines & Dreaming `v5.2`)**:
+  - Added `src/knowledge_graph/okf_knowledge_compiler.py`, `src/knowledge_graph/validate_okf.py`, `src/knowledge_graph/kg_serving_cache.py`, and public `kb/` bundle (`kb/index.md`, `kb/log.md`, `kb/architecture/antigravity_hub.md`, `kb/guides/autonomy_lifecycle.md`).
+  - Added `src/autonomy_engine/p0_quality_first_engine.py` (`CB-1..CB-7`), `src/autonomy_engine/p1_quality_first_engine.py` (`P1-CB-1..P1-CB-7`), `src/autonomy_engine/workspace_hygiene_gate.py`, and upgraded `src/autonomy_engine/anti_overfitting_gate.py` with the 8-mutant adversarial saboteur benchmark (`100%` recall).
+  - Upgraded `src/knowledge_graph/dreaming_engine.py` to `v5.2` integrating OKF v0.2 compilation, Saboteur filtering, and `/dev/shm/dreaming_improvements_for_reasoner.json` emission.
+- **`AGW-4` (`PD-Q` Skills, `EVAL.txtpb` & Diagram Renderer `v15.2`)**:
+  - Added `src/diagram_renderer/render_gcp_draw.py` (`v15.2`) and upgraded `render_mermaid.py` and `diagram_mcp_server.py`.
+  - Upgraded all 8 skills in `skills/` with `## Epistemic Reasoning & Grounding Protocol (PD-Q)` headers, `EVAL.txtpb` specifications, and `references/pdq-extended-guide.md`.
+- **`AGW-5` (Install/Startup Wiring & 10-Test Suite)**:
+  - Updated `scripts/install.sh`, `src/start_hub.sh`, `config/start_hub.sh`, and expanded `tests/test_autonomy_kg_hooks.py` to 10 comprehensive unit/integration tests.
+
+---
+
 ## [3.2.2] - 2026-09-21 — 🎯 7-Model UI Dropdown Allowlist Mapping & End-to-End Streaming
 
 ### 🚀 Fixes & Model Routing Enhancements

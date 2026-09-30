@@ -1,6 +1,6 @@
-# Antigravity Web Hub (v3.2.2 - Stable Release)
+# Antigravity Web Hub (v3.3.0 - Stable Release)
 
-[![Release](https://img.shields.io/badge/Release-v3.2.2--Stable-brightgreen.svg)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/Release-v3.3.0--Stable-brightgreen.svg)](CHANGELOG.md)
 [![Platform](https://img.shields.io/badge/Google%20Cloud-C2%20Compute--Optimized-blue.svg)](https://cloud.google.com/compute/docs/compute-optimized-machines#c2_series)
 [![Security](https://img.shields.io/badge/Security-IAP%20Zero--Trust-success.svg)](https://cloud.google.com/iap)
 
@@ -8,7 +8,15 @@ An enterprise-ready, headless GCP VM deployment and architecture for Google Anti
 
 ---
 
-## 🌟 What's New in v3.2.2
+## 🌟 What's New in v3.3.0
+
+### 0. 📚 Open Knowledge Format (`OKF v0.2`), 2-Stage Goldfish $\rightarrow$ Judge Gate (`v4.3`) & P0/P1 Quality Engines
+- **Open Knowledge Format (`OKF v0.2`) Compiler & Public `kb/` Bundle (`src/knowledge_graph/okf_knowledge_compiler.py`, `validate_okf.py`, `kb/`)**: Native support for the open-source [Google Cloud Open Knowledge Format (`OKF v0.2`)](https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf) with YAML frontmatter validation, `[^source-id]` citation footnotes, and automatic Turn-0 co-bundling.
+- **2-Stage Stateless Goldfish $\rightarrow$ Isolated Judge `Stop` Gate (`src/hooks/agent_stop_black_hat_gate.py` `v4.3`)**: Upgrades completion verification to the 5-subagent roster (`black-hat-goldfish`, `black-hat-judge`, `black-hat-critic`, `dreaming-improvement-reasoner`, `workspace-housekeeper`) enforcing `C1–C8` anti-laundering checks, pre-critic bottom summary validation, and in-process attached verification fallback.
+- **Turn-1 Pinned KV-Cache `PreInvocation` Hook (`src/hooks/kg_pre_invocation_hook.py` `v3.3`)**: Strips `<CONTEXT_SUMMARY>` before lexical matching, raises threshold to `score >= 45`, propagates 1-hop associative edges, and co-bundles Top-3 `okf:*` dossiers.
+- **`PreToolUse` Sentinel Dispatcher (`src/hooks/sentinel_dispatch.py` & `src/hooks/rules/`)**: Modular pre-execution guardrails blocking destructive shell commands, deprecated model regressions, oversized file payloads, and unanonymized workstation paths.
+- **P0 (`CB-1..CB-7`) & P1 (`P1-CB-1..P1-CB-7`) Quality-First Engines + 8-Mutant Saboteur Benchmark (`src/autonomy_engine/`)**: Lossless log pointers, anti-TOCTOU command verification, 12h FQN-scoped intraday lessons, 100% citation hash auditing, and 100% saboteur mutant recall.
+- **PD-Q Progressive Disclosure Skills & BENTO Diagram Renderer `v15.2` (`skills/`, `src/diagram_renderer/`)**: All 8 community skills upgraded with `PD-Q` Epistemic Reasoning headers, `EVAL.txtpb` specs, and `render_gcp_draw.py` BENTO architecture rendering.
 
 ### 1. 🎨 Dynamic 7-Model Catalog Routing (`src/ccpa_mock.py`)
 - **Native UI Dropdown Selection & End-to-End Streaming**: Directly switch between all 7 allowlisted Google Gemini and Anthropic Claude models inside the Antigravity chat input (mapped to native `language_server` enums for zero-drop streaming):

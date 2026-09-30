@@ -1,0 +1,8 @@
+# Declarative Evaluation Spec for parallel-task-orchestrator (PD-Q v2.0.0)
+skill_name: "parallel-task-orchestrator"
+version: "2.0.0"
+min_grounding_completeness_score: 0.85
+min_tool_call_accuracy: 1.00
+max_instruction_violation_rate: 0.01
+require_step1_causal_plan: true
+require_okf_citation_anchors: true
