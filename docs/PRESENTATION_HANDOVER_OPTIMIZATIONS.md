@@ -113,7 +113,7 @@ Running a desktop Electron IDE natively in the cloud revealed major architectura
 * **The Solution**:
   * **Injected Storage Bridge**: Injected polyfills for `window.nativeStorage` (backed by browser `localStorage`) and `window.electronNative` via Nginx `<head>` `sub_filter`.
   * **White Screen Fix**: Streamed an immediate initial gRPC-web state frame (`{ appState: { agentOnboardingCompleted: 2 }, userConfig: {} }`) over `ReadableStream` on connection, immediately toggling `initialized: true` in React.
-  * **Auth & NUX Bypass**: Automatically pre-configured `jetski_state.pbtxt` with completed onboarding steps (`MANAGER_WELCOME`, `USAGE_MODE`, `AGENT_CONFIGURATION`, `ADD_WORKSPACE`) and 23 seen NUX flags.
+  * **Auth & NUX Bypass**: Automatically pre-configured `antigravity_state.pbtxt` with completed onboarding steps (`MANAGER_WELCOME`, `USAGE_MODE`, `AGENT_CONFIGURATION`, `ADD_WORKSPACE`) and 23 seen NUX flags.
 
 ---
 

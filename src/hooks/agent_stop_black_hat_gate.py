@@ -181,7 +181,6 @@ REJECTED_VERDICT = re.compile(r"CRITIC_VERDICT\s*[:=]\s*REJECTED", re.IGNORECASE
 
 BRAIN_CANDIDATE_ROOTS = [
     os.path.expanduser("~/.gemini/antigravity/brain"),
-    os.path.expanduser("~/.gemini/jetski/brain"),
     "/mnt/data/.gemini/antigravity/brain",
 ]
 

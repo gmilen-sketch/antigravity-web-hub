@@ -17,6 +17,7 @@ PROHIBITED_LEAK_PATTERNS = [
     (r"/usr/local/google/home/[A-Za-z0-9_.-]+", "Hardcoded workstation home directory"),
     (r"sso://", "Internal SSO git scheme"),
     (r"\.corp\.google\.com", "Internal corporate domain"),
+    (r"(?i)jet" + r"ski", "Internal codename reference (use antigravity)"),
 ]
 
 
@@ -58,7 +59,7 @@ def scan_target(target_path: str) -> Dict[str, Any]:
             except Exception as exc:
                 syntax_errors.append(f"{fpath}: JSON error: {exc}")
 
-        if ext in (".py", ".js", ".sh", ".json"):
+        if ext in (".py", ".js", ".sh", ".json", ".md", ".pbtxt", ".txtpb"):
             for pattern, desc in PROHIBITED_LEAK_PATTERNS:
                 if re.search(pattern, content):
                     path_leaks.append(f"{fpath}: {desc}")

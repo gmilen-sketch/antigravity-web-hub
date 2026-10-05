@@ -328,8 +328,17 @@ def forward_request(path, method, headers, body):
         logging.error(f"Error forwarding request to {url}: {e}")
         return 502, {}, b"Gateway Error"
 
+def _resolve_active_state_pbtxt() -> str:
+    import glob
+    candidates = glob.glob(os.path.expanduser("~/.gemini/antigravity/*_state.pbtxt"))
+    if candidates:
+        candidates.sort(key=lambda p: os.path.getmtime(p), reverse=True)
+        return candidates[0]
+    return os.path.expanduser("~/.gemini/antigravity/antigravity_state.pbtxt")
+
+
 def get_active_ui_model():
-    pbtxt_path = os.path.expanduser("~/.gemini/antigravity/jetski_state.pbtxt")
+    pbtxt_path = _resolve_active_state_pbtxt()
     if os.path.exists(pbtxt_path):
         try:
             with open(pbtxt_path, "r") as f:
@@ -341,11 +350,11 @@ def get_active_ui_model():
                         mapped = map_model_name(model_str)
                         return mapped
         except Exception as e:
-            logging.error(f"Error reading jetski_state.pbtxt: {e}")
+            logging.error(f"Error reading antigravity_state.pbtxt: {e}")
     return None
 
 def get_active_ui_model_enum():
-    pbtxt_path = os.path.expanduser("~/.gemini/antigravity/jetski_state.pbtxt")
+    pbtxt_path = _resolve_active_state_pbtxt()
     if os.path.exists(pbtxt_path):
         try:
             with open(pbtxt_path, "r") as f:
@@ -367,11 +376,11 @@ def get_active_ui_model_enum():
                             return enum_map[model_str]
                         return model_str
         except Exception as e:
-            logging.error(f"Error reading jetski_state.pbtxt: {e}")
+            logging.error(f"Error reading antigravity_state.pbtxt: {e}")
     return None
 
 def extract_requested_model(doc):
-    # 1. Check active UI model from jetski_state.pbtxt first
+    # 1. Check active UI model from antigravity_state.pbtxt first
     ui_enum = get_active_ui_model_enum()
     if ui_enum is not None:
         return ui_enum
@@ -724,7 +733,7 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                 with open("/tmp/stream_req.json", "w") as f:
                     json.dump(doc, f, indent=2)
                 
-                # Check active UI selected model first from jetski_state.pbtxt
+                # Check active UI selected model first from antigravity_state.pbtxt
                 active_ui_model = get_active_ui_model()
                 if active_ui_model:
                     model = active_ui_model

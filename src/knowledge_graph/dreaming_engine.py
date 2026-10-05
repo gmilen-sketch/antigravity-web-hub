@@ -49,7 +49,6 @@ def discover_session_traces(lookback_hours: int = 24) -> List[str]:
         os.path.join(DATA_DIR, "brain", "*", ".system_generated", "logs"),
         os.path.join(DATA_DIR, "conversations"),
         os.path.expanduser("~/.gemini/antigravity/brain/*/.system_generated/logs"),
-        os.path.expanduser("~/.gemini/jetski/brain/*/.system_generated/logs"),
     ]
 
     for pattern in search_dirs:

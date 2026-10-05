@@ -273,16 +273,16 @@ if [ -d "agents" ]; then
   done
 fi
 
-# ---- 6. Bypass Onboarding Screen with jetski_state.pbtxt (Preserve Existing State) ----
+# ---- 6. Bypass Onboarding Screen with antigravity_state.pbtxt (Preserve Existing State) ----
 echo "Checking onboarding state..."
-if [ -f "config/jetski_state.pbtxt" ]; then
-  if [ ! -f "$RUN_HOME/.gemini/antigravity/jetski_state.pbtxt" ]; then
-    cp config/jetski_state.pbtxt "$RUN_HOME/.gemini/antigravity/jetski_state.pbtxt"
-    chown "$RUN_USER:$RUN_USER" "$RUN_HOME/.gemini/antigravity/jetski_state.pbtxt"
+if [ -f "config/antigravity_state.pbtxt" ]; then
+  if [ ! -f "$RUN_HOME/.gemini/antigravity/antigravity_state.pbtxt" ]; then
+    cp config/antigravity_state.pbtxt "$RUN_HOME/.gemini/antigravity/antigravity_state.pbtxt"
+    chown "$RUN_USER:$RUN_USER" "$RUN_HOME/.gemini/antigravity/antigravity_state.pbtxt"
   fi
-  if [ ! -f "$BIN_DIR/jetski_state.pbtxt" ]; then
-    cp config/jetski_state.pbtxt "$BIN_DIR/jetski_state.pbtxt"
-    chown "$RUN_USER:$RUN_USER" "$BIN_DIR/jetski_state.pbtxt"
+  if [ ! -f "$BIN_DIR/antigravity_state.pbtxt" ]; then
+    cp config/antigravity_state.pbtxt "$BIN_DIR/antigravity_state.pbtxt"
+    chown "$RUN_USER:$RUN_USER" "$BIN_DIR/antigravity_state.pbtxt"
   fi
 fi
 

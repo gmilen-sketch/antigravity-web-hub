@@ -59,7 +59,7 @@ All notable changes to the **Antigravity Web Hub** project will be documented in
   - Added AAAK 3-Pass Compressor CoT preservation fix (`thinking` + `thought` keys).
 - **Clean-Room Provisioning & Non-Destructive Upgrades**:
   - Updated `scripts/install.sh` to create default workspace directories (`$RUN_HOME/second-test-project` & `$RUN_HOME/workspace`) so `StartCascade` never fails with `file does not exist` on fresh VMs.
-  - Added non-destructive state check preserving existing `jetski_state.pbtxt`, `conversations/`, and `knowledge_graph.json` when upgrading live instances.
+  - Added non-destructive state check preserving existing `antigravity_state.pbtxt`, `conversations/`, and `knowledge_graph.json` when upgrading live instances.
   - Enforced `export CLOUDSDK_CORE_ACCOUNT` in `gcp_setup_vm.sh` and `gcp_setup_lb.sh`.
 
 ---
@@ -87,7 +87,7 @@ All notable changes to the **Antigravity Web Hub** project will be documented in
 - **Compute-Optimized `c2-standard-8` Infrastructure**: Default VM upgraded to 8 vCPUs / 32 GB RAM for responsive language server compilation and 8-worker Nginx reverse proxy dispatch.
 - **Single-Command Destroy $\rightarrow$ Deploy $\rightarrow$ Verify Pipeline (`scripts/deploy_and_verify.sh`)**: Fully automated clean-room orchestration with automated Headless Chrome CDP browser verification, prompt submission, and live thread validation.
 - **Community Skills Catalog**: Bundled 8 pre-configured agent skills in `skills/` with automated multi-path discovery (`~/.gemini/config/skills/`, `.agents/skills/`, and `skills.json`).
-- **Storage Bridge & Zero-Friction Onboarding**: Automated `jetski_state.pbtxt` initialization and Nginx `<head>` injection of `window.nativeStorage` and `window.electronNative` polyfills.
+- **Storage Bridge & Zero-Friction Onboarding**: Automated `antigravity_state.pbtxt` initialization and Nginx `<head>` injection of `window.nativeStorage` and `window.electronNative` polyfills.
 
 ---
 
