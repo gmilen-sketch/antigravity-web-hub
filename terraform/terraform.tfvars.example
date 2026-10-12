@@ -1,0 +1,17 @@
+project_id    = "your-enterprise-sandbox-project-id"
+region        = "us-central1"
+zone          = "us-central1-a"
+instance_name = "antigravity-web-hub"
+machine_type  = "n4-standard-2"
+disk_type     = "hyperdisk-balanced"
+
+# Note for Enterprise GCP Sandbox: Use your Enterprise GCP Sandbox Admin Account (e.g., admin@example.com or `gcloud config get-value account`).
+# Enterprise GCP Sandbox enforces constraints/iam.allowedPolicyMemberDomains restricting IAP access to example.com domain users.
+iap_members   = [
+  "user:admin@example.com"
+]
+
+# Optional custom domain (Leave empty to use <ip>.nip.io)
+# public_domain = "antigravity.mycompany.com"
+
+

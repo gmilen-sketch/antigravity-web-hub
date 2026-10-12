@@ -1,0 +1,6 @@
+# proto-file: eval.proto
+# proto-message: SkillEvaluationSuite
+skill_name: "antigravity-web-builder"
+version: "3.4.0"
+min_pass_rate: 1.0
+require_zero_proprietary_leaks: true

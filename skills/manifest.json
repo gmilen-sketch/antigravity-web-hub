@@ -1,0 +1,128 @@
+{
+  "version": "3.5.1",
+  "antigravity_core_version": "2.22.0",
+  "antigravity_cli_version": "1.3.3",
+  "skill_count": 20,
+  "skills": [
+    {
+      "name": "black-hat-analysis",
+      "icon": "\ud83c\udfa9",
+      "version": "3.4.0",
+      "description": "Executes adversarial 2-Stage Stateless Goldfish -> Isolated Judge forensic verification, C9 pre-prose table grounding, and AST silent-fallback audits."
+    },
+    {
+      "name": "six-hats-evaluator",
+      "icon": "\ud83c\udfa9",
+      "version": "3.4.0",
+      "description": "Evaluates architectural decisions across Edward de Bono's Six Thinking Hats with iterative Delphi convergence and weighted trade-off matrices."
+    },
+    {
+      "name": "first-principles-brainstormer",
+      "icon": "\ud83e\udde0",
+      "version": "3.4.0",
+      "description": "Conducts pre-flight specification brainstorming with explicit negative constraints and 6-lens adversarial shootdowns before implementation."
+    },
+    {
+      "name": "p0-quality-first-engine",
+      "icon": "\ud83d\udee1\ufe0f",
+      "version": "3.4.0",
+      "description": "Enforces P0 deterministic circuit-breakers (CB-1..CB-7), Bernstein disjoint write-set locks, temporal window resolution, and chained-shell subshell guards."
+    },
+    {
+      "name": "p1-quality-first-engine",
+      "icon": "\ud83d\udd12",
+      "version": "3.4.0",
+      "description": "Enforces P1 grounded retrieval circuit-breakers (P1-CB-1..P1-CB-8), Pre-Ingestion Prompt-Injection (PICC) quarantine, and 3-Stage issue triage."
+    },
+    {
+      "name": "self-grill",
+      "icon": "\ud83d\udd25",
+      "version": "3.4.0",
+      "description": "Runs Bayesian Self-Grill prior locking (C0..C3) and multi-loop headless Chromium DOM/SVG geometry verification (audit_web_ui_geometry.py)."
+    },
+    {
+      "name": "golden-ab-testing",
+      "icon": "\u2696\ufe0f",
+      "version": "3.4.0",
+      "description": "Executes paired A/B evaluations with Hake's Normalized Gain, unbiased hypergeometric pass@k/pass^k, and Wilcoxon/McNemar significance gates."
+    },
+    {
+      "name": "idea-evaluator",
+      "icon": "\ud83d\udca1",
+      "version": "3.4.0",
+      "description": "Scores candidate engineering ideas using Signal Detection Theory (d' >= 1.80) and empirical complexity-vs-value gates."
+    },
+    {
+      "name": "parallel-task-orchestrator",
+      "icon": "\ud83d\udc1d",
+      "version": "3.4.0",
+      "description": "Coordinates parallel leaf subagents (MAX_DEPTH=1) with <hydrated_context> XML bundles and disjoint write-set enforcement."
+    },
+    {
+      "name": "universal-solution-architect",
+      "icon": "\ud83c\udfdb\ufe0f",
+      "version": "3.4.0",
+      "description": "Designs production cloud architectures across all 6 pillars (AI/ML, Data Analytics, App Mod, Security, Multicloud, Sovereign Cloud)."
+    },
+    {
+      "name": "open-deep-researcher",
+      "icon": "\ud83e\udd89",
+      "version": "3.4.0",
+      "description": "Executes multi-source deep research across Git repositories, BigQuery datasets, enterprise wikis, and public documentation with citation hash verification."
+    },
+    {
+      "name": "diagram-renderer",
+      "icon": "\ud83d\udcd0",
+      "version": "3.4.0",
+      "description": "Compiles BENTO architecture DSL and Mermaid v12 definitions into high-DPI orthogonal SVG/PNG diagrams with rounded r=5.5px Manhattan connectors."
+    },
+    {
+      "name": "playwright-agent-browser",
+      "icon": "\ud83c\udf10",
+      "version": "3.4.0",
+      "description": "Automates headless Chromium via Playwright and RFC 6455 WebSocket CDP (:9222) with Shadow-DOM piercing and React Fiber file uploads."
+    },
+    {
+      "name": "workspace-docs-publisher",
+      "icon": "\ud83d\udcc4",
+      "version": "3.4.0",
+      "description": "Publishes 3-Tab Inverted-Pyramid (Arm E / AGENT-SSOT-v1) technical reports with 516.0 pt centered tables via public Google Docs REST API v1."
+    },
+    {
+      "name": "workspace-slides-generator",
+      "icon": "\ud83d\udcca",
+      "version": "3.4.0",
+      "description": "Generates executive 720x405 pt presentations with 4-card layouts and 3-shape vector chevron connectors via public Google Slides REST API v1."
+    },
+    {
+      "name": "universal-task-sync",
+      "icon": "\ud83d\udccb",
+      "version": "3.4.0",
+      "description": "Synchronizes portfolio task ledgers with 1-Sheet 3-Row Staging Diffs (Current, Planned, Delta) via public Google Sheets REST API v4."
+    },
+    {
+      "name": "antigravity-web-builder",
+      "icon": "\ud83c\udfd7\ufe0f",
+      "version": "3.4.0",
+      "description": "Provisions, configures, and verifies cloud-hosted Antigravity Web Hub instances with Cloud IAP, HTTPS reverse proxying, and pre-warmed sessions."
+    },
+    {
+      "name": "finops-focus-auditor",
+      "icon": "\ud83d\udcb0",
+      "version": "3.4.0",
+      "description": "Audits cloud commitment utilization, CUD coverage, and spend anomalies over BigQuery FOCUS Billing Export tables."
+    },
+    {
+      "name": "migration-center-architect",
+      "icon": "\ud83d\ude80",
+      "version": "3.4.0",
+      "description": "Sizes TCO and cloud migration waves using Google Cloud Migration Center discovery exports and right-sizing heuristics."
+    },
+    {
+      "name": "issue-tracker-manager",
+      "icon": "\ud83c\udfab",
+      "version": "3.4.0",
+      "description": "Triages, deduplicates, and sweeps engineering queues across GitHub Issues, Jira Cloud, and GitLab REST APIs."
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+.env
+*.pyc
+__pycache__/
+.venv/
+venv/
+node_modules/
+package-lock.json
+
+# Anything auth-shaped
+*.token
+*.key
+*credentials*.json
+tokens.json
+oauth-token*
+ADC*
+
+# Runtime state that shouldn't be published
+claude_cascades/
+*.db
+*.log
+brain/
+
+# Terraform
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/*.tfstate*
+terraform/terraform.tfvars
+# Binaries
+bin/
+
+assets/*.zip
+*.tar.gz
+*.deb
