@@ -2,8 +2,8 @@
   window.__APP_CONFIG__ = {
     productName: 'antigravity',
     csrfToken: 'antigravity_secret_csrf_token_12345',
-    appVersion: '2.22.0',
-    hubVersion: '3.6.1',
+    appVersion: '2.24.0',
+    hubVersion: '3.7.0',
     releaseChannel: 'stable',
     devMode: false
   };

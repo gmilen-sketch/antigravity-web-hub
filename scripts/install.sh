@@ -57,10 +57,10 @@ mkdir -p "$BIN_DIR" /opt/antigravity/bin "$RUN_HOME/.gemini/config" "$RUN_HOME/.
 chown -R "$RUN_USER:$RUN_USER" "$RUN_HOME/.gemini" "$RUN_HOME/.agents" "$RUN_HOME/enterprise-workspace" "$RUN_HOME/workspace" /mnt/data/projects 2>/dev/null || true
 
 # Dynamically discover the latest official Antigravity 2.0 Hub release from Google Auto-Updater API
-DEFAULT_AGY_HUB_VERSION="2.22.0"
-DEFAULT_AGY_HUB_EXEC_ID="5446056071266304"
-DEFAULT_AGY_CLI_VERSION="1.3.3"
-DEFAULT_AGY_CLI_EXEC_ID="5524738307653632"
+DEFAULT_AGY_HUB_VERSION="2.24.0"
+DEFAULT_AGY_HUB_EXEC_ID="5780333019398144"
+DEFAULT_AGY_CLI_VERSION="1.4.0"
+DEFAULT_AGY_CLI_EXEC_ID="5281842794987520"
 
 ANTIGRAVITY_RELEASES_MANIFEST_URL="${ANTIGRAVITY_RELEASES_MANIFEST_URL:-https://antigravity-hub-auto-updater-974169037036.us-central1.run.app/releases}"
 AGY_RELEASES_JSON=$(curl -sS --max-time 8 "$ANTIGRAVITY_RELEASES_MANIFEST_URL" 2>/dev/null || true)
@@ -81,8 +81,22 @@ else
   AGY_HUB_VERSION="${ANTIGRAVITY_HUB_VERSION:-$DEFAULT_AGY_HUB_VERSION}"
   AGY_HUB_EXEC_ID="${ANTIGRAVITY_HUB_EXEC_ID:-$DEFAULT_AGY_HUB_EXEC_ID}"
 fi
-AGY_CLI_VERSION="${ANTIGRAVITY_CLI_VERSION:-$DEFAULT_AGY_CLI_VERSION}"
-AGY_CLI_EXEC_ID="${ANTIGRAVITY_CLI_EXEC_ID:-$DEFAULT_AGY_CLI_EXEC_ID}"
+AGY_CLI_VERSION="${ANTIGRAVITY_CLI_VERSION:-}"
+AGY_CLI_EXEC_ID="${ANTIGRAVITY_CLI_EXEC_ID:-}"
+
+if [ -z "$AGY_CLI_VERSION" ] || [ -z "$AGY_CLI_EXEC_ID" ]; then
+    CLI_RELEASE_JSON=$(curl -fsSL --max-time 10 "https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/releases" 2>/dev/null || true)
+    if [ -n "$CLI_RELEASE_JSON" ]; then
+        RESOLVED_CLI_VER=$(python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); r=d.get("releases",[]); print(r[-1].get("version","") if r else "")' <<< "$CLI_RELEASE_JSON" 2>/dev/null || true)
+        RESOLVED_CLI_EID=$(python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); r=d.get("releases",[]); print(r[-1].get("execution_id","") if r else "")' <<< "$CLI_RELEASE_JSON" 2>/dev/null || true)
+        if [ -n "$RESOLVED_CLI_VER" ] && [ -n "$RESOLVED_CLI_EID" ]; then
+            AGY_CLI_VERSION="$RESOLVED_CLI_VER"
+            AGY_CLI_EXEC_ID="$RESOLVED_CLI_EID"
+        fi
+    fi
+fi
+AGY_CLI_VERSION="${AGY_CLI_VERSION:-$DEFAULT_AGY_CLI_VERSION}"
+AGY_CLI_EXEC_ID="${AGY_CLI_EXEC_ID:-$DEFAULT_AGY_CLI_EXEC_ID}"
 
 TARGET_STAMP="${AGY_HUB_VERSION}-${AGY_HUB_EXEC_ID}_cli-${AGY_CLI_VERSION}-${AGY_CLI_EXEC_ID}"
 INSTALLED_STAMP=$(cat "$BIN_DIR/.antigravity_version" 2>/dev/null || echo "none")

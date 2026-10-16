@@ -520,6 +520,17 @@ def _format_entity_lines(entities: List[Dict[str, Any]]) -> List[str]:
     return lines
 
 
+def extract_root_conversation_id(payload: Dict[str, Any]) -> str:
+    """Extracts rootConversationId (2026-10-13 Antigravity 2.24+ / CLI 1.4+ hook contract) with fallback to conversationId or session_id."""
+    if not isinstance(payload, dict):
+        return "live-session"
+    for key in ("rootConversationId", "root_conversation_id", "conversationId", "conversation_id", "session_id"):
+        val = payload.get(key)
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    return "live-session"
+
+
 def main() -> None:
     try:
         raw = sys.stdin.read()
@@ -527,8 +538,12 @@ def main() -> None:
     except Exception:
         payload = {}
 
-    transcript_path = str(payload.get("transcriptPath", "") or "")
+    transcript_path = str(payload.get("transcriptPath") or payload.get("transcript_path") or "")
+    root_conversation_id = extract_root_conversation_id(payload)
     recent_inputs = extract_recent_inputs(transcript_path, max_turns=3)
+    direct_prompt = str(payload.get("prompt") or payload.get("user_prompt") or "").strip()
+    if direct_prompt and direct_prompt not in recent_inputs:
+        recent_inputs.append(direct_prompt)
     context_text = " \n ".join(recent_inputs) if recent_inputs else ""
 
     kg_data = load_kg()
@@ -640,7 +655,7 @@ def build_dso_subagent_orientation_banner(active_subagent_count: int) -> str:
     )
 
 
-def run_pre_invocation_grounding(prompt_text: str, session_id: str = "live-session") -> Dict[str, Any]:
+def run_pre_invocation_grounding(prompt_text: str, session_id: str = "live-session", root_conversation_id: str = "") -> Dict[str, Any]:
     """Executes live PreInvocation KG + OKF v0.2 + 20-Skill grounding for an active Antigravity Web session."""
     clean_prompt = strip_canary_headers(prompt_text or "")
     kg_data = load_kg()
@@ -671,6 +686,7 @@ def run_pre_invocation_grounding(prompt_text: str, session_id: str = "live-sessi
 
     return {
         "session_id": session_id,
+        "root_conversation_id": root_conversation_id or session_id,
         "pinned_entities": pinned_entities,
         "hop2_neighborhood": hop2_map,
         "matched_skills": [{"name": n, "path": scrub(p)} for n, p in matched_skills],

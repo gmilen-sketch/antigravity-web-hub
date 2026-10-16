@@ -9,6 +9,9 @@ subagent: true
 commandExecutionPolicy: off
 inheritCustomizations: false
 inheritMcp: false
+preloadSkills:
+  - black-hat-verification
+  - self-grill-quality-gate
 ---
 
 # Black-Hat Judge (Stage 2: Isolated Adjudicator)

@@ -25,6 +25,8 @@ except ImportError:
 from render_mermaid import render_mermaid_to_png, compile_markdown_diagrams
 from render_gcp_draw import render_gcp_draw_to_svg
 
+EAGER_TOOL_META = {"antigravity/alwaysLoad": True}
+
 mcp = FastMCP("diagram_renderer_mcp")
 
 

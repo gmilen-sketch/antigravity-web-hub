@@ -78,6 +78,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       {
         name: "gmail_list_messages",
+        _meta: { "antigravity/alwaysLoad": true },
         description: "List recent messages from the user's Gmail inbox.",
         inputSchema: {
           type: "object",

@@ -33,7 +33,18 @@ try:
 except Exception:
     _HAVE_GOOGLE_AUTH = False
 
-from fastmcp import FastMCP
+try:
+    from fastmcp import FastMCP
+except ImportError:
+    class FastMCP:
+        def __init__(self, name="", **kwargs):
+            self.name = name
+        def tool(self, *args, **kwargs):
+            def decorator(f):
+                return f
+            return decorator
+        def run(self, *args, **kwargs):
+            pass
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 log = logging.getLogger("mcp_deep_research")
@@ -396,6 +407,8 @@ async def _research_loop(query: str, mode: str) -> dict:
 
 
 # --- MCP wiring -------------------------------------------------------------
+EAGER_TOOL_META = {"antigravity/alwaysLoad": True}
+
 mcp = FastMCP(name="deep-research")
 
 

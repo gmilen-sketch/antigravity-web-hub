@@ -4,8 +4,21 @@ import sys
 import json
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from fastmcp import FastMCP
+try:
+    from fastmcp import FastMCP
+except ImportError:
+    class FastMCP:
+        def __init__(self, name="", **kwargs):
+            self.name = name
+        def tool(self, *args, **kwargs):
+            def decorator(f):
+                return f
+            return decorator
+        def run(self, *args, **kwargs):
+            pass
 from kg_engine import get_kg_engine
+
+EAGER_TOOL_META = {"antigravity/alwaysLoad": True}
 
 mcp = FastMCP("knowledge_graph")
 

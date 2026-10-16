@@ -22,6 +22,8 @@ except ImportError:
 
 from six_hats import format_six_hats_prompt
 
+EAGER_TOOL_META = {"antigravity/alwaysLoad": True}
+
 mcp = FastMCP("six_hats_evaluator_mcp")
 
 @mcp.tool()

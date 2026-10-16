@@ -10,6 +10,9 @@ subagent: true
 commandExecutionPolicy: auto
 inheritCustomizations: false
 inheritMcp: false
+preloadSkills:
+  - black-hat-verification
+  - workspace-hygiene-guardian
 ---
 
 # Black-Hat Goldfish (Stage 1: Stateless Forensic Investigator)

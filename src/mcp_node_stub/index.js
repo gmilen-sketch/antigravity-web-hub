@@ -20,6 +20,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     tools: [
       {
         name: "deep_research",
+        _meta: { "antigravity/alwaysLoad": true },
         description: "Performs deep research on a given topic.",
         inputSchema: {
           type: "object",

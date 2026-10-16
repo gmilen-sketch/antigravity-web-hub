@@ -1032,8 +1032,10 @@ def evaluate(payload: Dict[str, Any]) -> Dict[str, Any]:
     artifact_dir = get_str(payload, "artifactDirectoryPath", "artifact_directory_path")
     fully_idle = payload.get("fullyIdle", payload.get("fully_idle", True))
 
+    root_cid = get_str(payload, "rootConversationId", "root_conversation_id", "conversationId", "conversation_id", "session_id")
+
     def allow(why: str, **extra: Any) -> Dict[str, Any]:
-        out = {"decision": "allow", "audit": why}
+        out = {"decision": "allow", "audit": why, "rootConversationId": root_cid}
         out.update(extra)
         return out
 
@@ -1138,7 +1140,8 @@ def log_record(payload: Dict[str, Any], result: Dict[str, Any], elapsed_ms: floa
         os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
         record = {
             "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "conversationId": get_str(payload, "conversationId", "conversation_id"),
+            "conversationId": get_str(payload, "conversationId", "conversation_id", "session_id"),
+            "rootConversationId": get_str(payload, "rootConversationId", "root_conversation_id", "conversationId", "conversation_id", "session_id"),
             "agentName": get_str(payload, "agentName", "agent_name"),
             "terminationReason": get_str(payload, "terminationReason", "termination_reason"),
             "executionNum": get_int(payload, "executionNum", "execution_num"),

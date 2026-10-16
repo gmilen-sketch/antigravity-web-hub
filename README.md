@@ -1,12 +1,12 @@
-# Antigravity Web Hub (v3.6.1 — Gemini 4 Argon GA & Claude 5.5 Edition)
+# Antigravity Web Hub (v3.7.0 — Gemini 4 Argon GA & Claude 5.5 Edition)
 
-[![Release](https://img.shields.io/badge/Release-v3.6.1--Stable-brightgreen.svg)](CHANGELOG.md)
-[![Antigravity Core](https://img.shields.io/badge/Antigravity_Core-v2.22.0_%7C_CLI_v1.3.3-8A2BE2.svg)](https://antigravity.google)
+[![Release](https://img.shields.io/badge/Release-v3.7.0--Stable-brightgreen.svg)](CHANGELOG.md)
+[![Antigravity Core](https://img.shields.io/badge/Antigravity_Core-v2.24.0_%7C_CLI_v1.4.0-8A2BE2.svg)](https://antigravity.google)
 [![Models](https://img.shields.io/badge/Models-Gemini_4_Argon_GA_%7C_Claude_Opus_5.5_%26_Sonnet_5.5_%26_Fable_5-orange.svg)](#1--dynamic-8-model-ga-catalog-routing-srcccpa_mockpy--srcbootstrapjs)
 [![Autonomy Engine](https://img.shields.io/badge/Autonomy_Engine-14_Pillars_%7C_20_Skills_%7C_8_FastMCP-blue.svg)](#2--14-pillar-clean-room-autonomy-engine-20-pd-q-skills--5-subagents)
 [![Security](https://img.shields.io/badge/Security-IAP_Zero--Trust_%26_Clean--Room_Certified-success.svg)](https://cloud.google.com/iap)
 
-An enterprise-ready, headless Google Cloud VM deployment and clean-room autonomy architecture for **Google Antigravity 2.0 Web (`v2.22.0` Hub + `v1.3.3` CLI)** — featuring **8 GA models** (**Gemini 4 Argon GA**, **Gemini 3.8 / 3.7 / 3.6 / 3.5 Flash**, **Claude Opus 5.5**, **Claude Sonnet 5.5**, and **Claude Fable 5**), **persistent cross-browser multi-model sidebar sessions (`/api/sessions`)**, **14 Clean-Room Autonomy Pillars**, **20 `PD-Q` Skills**, **8 FastMCP Servers**, **3 Lifecycle Hooks**, **5 Custom Subagents**, and **dynamic official CDN binary updates**.
+An enterprise-ready, headless Google Cloud VM deployment and clean-room autonomy architecture for **Google Antigravity 2.0 Web (`v2.24.0` Hub + `v1.4.0` CLI)** — featuring **8 GA models** (**Gemini 4 Argon GA**, **Gemini 3.8 / 3.7 / 3.6 / 3.5 Flash**, **Claude Opus 5.5**, **Claude Sonnet 5.5**, and **Claude Fable 5**), **persistent cross-browser multi-model sidebar sessions (`/api/sessions`)**, **14 Clean-Room Autonomy Pillars**, **20 `PD-Q` Skills**, **8 FastMCP Servers**, **3 Lifecycle Hooks**, **5 Custom Subagents**, and **dynamic official CDN binary updates**.
 
 ---
 
@@ -38,12 +38,12 @@ Switch seamlessly between all **8 General Availability (GA) Google Gemini and An
 
 ---
 
-### 3. 🚀 Antigravity 2.0 Core Engine (`v2.22.0` Hub + `v1.3.3` CLI) & Bare-Metal Scratch Installer (`v3.5.3+`)
-- **Dynamic Official Release Auto-Updater (`scripts/install.sh`)**: Queries the public Antigravity 2.0 release API (`https://antigravity-hub-auto-updater-974169037036.us-central1.run.app/releases`) during install/upgrade to resolve the latest verified release (`2.22.0-5446056071266304`) and downloads all 4 official runtime components from `https://storage.googleapis.com/antigravity-public/`:
-  1. **`language_server` (`v2.22.0`, `183.9 MB`)**: Go Language Server & embedded `2.22.0` React SPA Web UI (`--subclient_type=hub --override_ide_version="2.22.0" -standalone`) with native `/healthz` readiness checks.
-  2. **`webm_encoder` (`v2.22.0`, `17.1 MB`)**: Native Antigravity 2.0 WebM browser recording & replay video encoder (`resources/bin/webm_encoder`).
-  3. **`chrome-devtools-mcp` (`v2.22.0`)**: Official built-in Chrome DevTools MCP browser agent runtime & 7 browser debugging skill bundles.
-  4. **`antigravity` Standalone CLI (`v1.3.3`, `214.2 MB`)**: Official companion CLI binary installed to `/usr/local/bin/antigravity`.
+### 3. 🚀 Antigravity 2.0 Core Engine (`v2.24.0` Hub + `v1.4.0` CLI) & Bare-Metal Scratch Installer (`v3.5.3+`)
+- **Dynamic Official Release Auto-Updater (`scripts/install.sh`)**: Queries the public Antigravity 2.0 release API (`https://antigravity-hub-auto-updater-974169037036.us-central1.run.app/releases`) during install/upgrade to resolve the latest verified release (`2.24.0-5780333019398144`) and downloads all 4 official runtime components from `https://storage.googleapis.com/antigravity-public/`:
+  1. **`language_server` (`v2.24.0`, `183.9 MB`)**: Go Language Server & embedded `2.24.0` React SPA Web UI (`--subclient_type=hub --override_ide_version="2.24.0" -standalone`) with native `/healthz` readiness checks.
+  2. **`webm_encoder` (`v2.24.0`, `17.1 MB`)**: Native Antigravity 2.0 WebM browser recording & replay video encoder (`resources/bin/webm_encoder`).
+  3. **`chrome-devtools-mcp` (`v2.24.0`)**: Official built-in Chrome DevTools MCP browser agent runtime & 7 browser debugging skill bundles.
+  4. **`antigravity` Standalone CLI (`v1.4.0`, `214.2 MB`)**: Official companion CLI binary installed to `/usr/local/bin/antigravity`.
 - **Zero-Config Bare-Metal Scratch Installation**: `scripts/install.sh` auto-discovers `GOOGLE_CLOUD_PROJECT` and `VM_NAME` from the GCE Metadata Server when `.env` is absent, installs all system/Node/Python dependencies (`chromium`, `psmisc`, `ws`, `nginx`), cleans orphaned processes, and verifies readiness across `/healthz`, `/api/version`, and `/` (`id="root"`).
 
 ---
@@ -91,7 +91,7 @@ All auxiliary agent capabilities run as standard **Model Context Protocol (MCP)*
 │  /api/sessions, /api/autonomy, /api/version             Static Web Assets │      │
 │          ▼                                                                ▼      │
 │   ccpa_mock.py (:8083)                                   language_server (:8081) │
-│   (8-Model Router, Session Store & Autonomy Gateway)     (Antigravity 2.22.0 Go) │
+│   (8-Model Router, Session Store & Autonomy Gateway)     (Antigravity 2.24.0 Go) │
 └──────────┬────────────────────────────────────────────────────────────────┬──────┘
            │                                                                │
 ┌──────────┼────────────────────────────────────────────────────────────────┼──────┐
@@ -117,7 +117,7 @@ All auxiliary agent capabilities run as standard **Model Context Protocol (MCP)*
 ```bash
 sudo bash scripts/install.sh
 ```
-`scripts/install.sh` auto-discovers your GCP project and VM name from the GCE Metadata Server, downloads the latest Antigravity `2.22.0` Core + `1.3.3` CLI binaries from the official public CDN, installs all 20 skills, 8 FastMCP servers, and 3 lifecycle hooks, starts `antigravity-web.service` + `nginx`, and verifies `/healthz` and `/api/version`.
+`scripts/install.sh` auto-discovers your GCP project and VM name from the GCE Metadata Server, downloads the latest Antigravity `2.24.0` Core + `1.4.0` CLI binaries from the official public CDN, installs all 20 skills, 8 FastMCP servers, and 3 lifecycle hooks, starts `antigravity-web.service` + `nginx`, and verifies `/healthz` and `/api/version`.
 
 ### 2. Full Clean-Room Unit & Integration Test Suite (`27/27` Tests)
 ```bash
@@ -136,7 +136,7 @@ LB_IP="127.0.0.1:8080" E2E_SCREENSHOT_PATH="/tmp/antigravity_e2e_verified.png" n
 
 - **[SETUP.md](SETUP.md)** — Step-by-step Terraform, workstation, and manual VM deployment guide & IAP OAuth setup
 - **[ARCHITECTURE.md](ARCHITECTURE.md)** — Component topology, binary manifest, and Connect-RPC / gRPC-Web routing details
-- **[CHANGELOG.md](CHANGELOG.md)** — Release notes and version history (`v2.1.0` $\rightarrow$ `v3.6.1`)
+- **[CHANGELOG.md](CHANGELOG.md)** — Release notes and version history (`v2.1.0` $\rightarrow$ `v3.7.0`)
 - **[docs/request-flow.md](docs/request-flow.md)** — Byte-level walkthrough of a multi-model turn (`Gemini 4 Argon` & `Claude Opus 5.5`)
 - **[docs/mcp.md](docs/mcp.md)** — Guide to the 8 built-in FastMCP servers and adding custom MCP tools
 

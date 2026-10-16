@@ -1,0 +1,10 @@
+{
+  "name": "antigravity-enterprise-autonomy",
+  "version": "3.7.0",
+  "description": "14-Pillar Enterprise Autonomy Engine, Bitemporal Knowledge Graph (OKF v0.2), 20 PD-Q Skills, 5 Custom Subagents, 3 Lifecycle Hooks, and 8 FastMCP Servers for Antigravity 2.24+ & CLI 1.4+.",
+  "skills": "skills",
+  "agents": "agents",
+  "rules": "rules",
+  "hooks": "hooks.json",
+  "mcpServers": "mcp_config.json"
+}

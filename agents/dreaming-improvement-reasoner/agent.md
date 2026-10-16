@@ -12,6 +12,9 @@ subagent: true
 commandExecutionPolicy: auto
 inheritCustomizations: false
 inheritMcp: false
+preloadSkills:
+  - nightly-dreaming-synthesizer
+  - unified-evaluation-harness
 ---
 
 # Dreaming Improvement Reasoner (Epistemic Root-Cause & Patch Synthesis Specialist)

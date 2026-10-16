@@ -9,6 +9,9 @@ tools:
 mainAgent: false
 subagent: true
 commandExecutionPolicy: auto
+preloadSkills:
+  - black-hat-verification
+  - self-grill-quality-gate
 ---
 
 # Black-Hat Critic (v4.3 Clean-Room Edition)

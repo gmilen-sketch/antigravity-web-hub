@@ -149,8 +149,11 @@ def sanitize_gemini_4_payload(cleaned_req: dict, model: str) -> dict:
         if isinstance(tc, dict):
             tc.pop("thinkingBudget", None)
             tc.pop("thinking_budget", None)
-            if tc.get("thinkingLevel") == "MINIMAL":
+            lvl = str(tc.get("thinkingLevel") or "").upper()
+            if lvl == "MINIMAL":
                 tc["thinkingLevel"] = "MEDIUM"
+            elif lvl in ("XHIGH", "MAX", "THINKING_LEVEL_MAX", "THINKING_LEVEL_XHIGH"):
+                tc["thinkingLevel"] = "HIGH"
     return cleaned_req
 
 
@@ -1698,6 +1701,14 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                         "name": "remote-control-setting-enabled",
                         "value": {"boolValue": True},
                     },
+                    {
+                        "name": "enable-swarm",
+                        "value": {"boolValue": True},
+                    },
+                    {
+                        "name": "enable-programmatic-tools",
+                        "value": {"boolValue": True},
+                    },
                 ]
             }
         elif "fetchAdminControls" in self.path:
@@ -1854,10 +1865,10 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                     pass
             version_resp = {
                 "project_id": PROJECT_ID,
-                "hub_version": "3.6.1",
-                "antigravity_core_version": manifest.get("antigravity_core_version", "2.22.0"),
-                "antigravity_execution_id": manifest.get("antigravity_execution_id", "5446056071266304"),
-                "antigravity_cli_version": cli_ver or "1.3.3",
+                "hub_version": "3.7.0",
+                "antigravity_core_version": manifest.get("antigravity_core_version", "2.24.0"),
+                "antigravity_execution_id": manifest.get("antigravity_execution_id", "5780333019398144"),
+                "antigravity_cli_version": cli_ver or "1.4.0",
                 "language_server_stamp": ls_stamp,
                 "language_server_bytes": os.path.getsize(ls_bin) if os.path.isfile(ls_bin) else 0,
                 "webm_encoder_present": os.path.isfile(webm_bin),
@@ -1923,8 +1934,8 @@ class CCPAHandler(http.server.BaseHTTPRequestHandler):
                 sessions_list = list(_live_sessions_ledger.values())
             resp_obj = {
                 "project_id": PROJECT_ID,
-                "version": "3.5.0",
-                "antigravity_core_version": "2.22.0",
+                "version": "3.7.0",
+                "antigravity_core_version": "2.24.0",
                 "active_sessions_count": len(sessions_list),
                 "sessions": sessions_list,
             }

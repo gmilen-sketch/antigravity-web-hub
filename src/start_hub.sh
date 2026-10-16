@@ -4,6 +4,8 @@ export CHROMIUM_FLAGS="--no-sandbox --disable-dev-shm-usage --disable-gpu --head
 
 # Force Go to use cgo system resolver to prevent local loopback resolution failures on GCE VM network configurations
 export GODEBUG=netdns=cgo
+export AGY_CLI_AUTO_COMPACT_OVERRIDE="${AGY_CLI_AUTO_COMPACT_OVERRIDE:-80%}"
+export JJ_PAGER="${JJ_PAGER:-cat}"
 
 # Ensure isolated temp profile directory for language_server
 LS_CHROME_DIR="/tmp/ls-chrome-data"

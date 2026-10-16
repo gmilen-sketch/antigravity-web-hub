@@ -11,6 +11,9 @@ tools:
 mainAgent: false
 subagent: true
 commandExecutionPolicy: auto
+preloadSkills:
+  - workspace-hygiene-guardian
+  - knowledge-graph-memory
 ---
 
 # Workspace Housekeeper Subagent

@@ -22,6 +22,8 @@ except ImportError:
 
 from playwright_scraper import fetch_page_markdown
 
+EAGER_TOOL_META = {"antigravity/alwaysLoad": True}
+
 mcp = FastMCP("playwright_scraper_mcp")
 
 @mcp.tool()

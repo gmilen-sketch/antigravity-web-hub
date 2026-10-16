@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.7.0] - 2026-10-16
+
+### Added & Upgraded (Antigravity 2.24.0 Hub + CLI 1.4.0 + Latest Platform Features)
+- **Antigravity 2.24.0 Hub & CLI 1.4.0 Core Engine Upgrade**: Upgraded default Hub engine to `2.24.0` (`execution_id: 5780333019398144`) and CLI to `1.4.0` (`execution_id: 5281842794987520`) with dynamic release resolution across both `antigravity-hub-auto-updater` and `antigravity-cli-auto-updater` endpoints in `scripts/install.sh` and `config/start_hub.sh`.
+- **Hook `rootConversationId` & Multi-Harness Payload Normalization**: Updated `src/hooks/{agent_stop_black_hat_gate.py,kg_pre_invocation_hook.py,sentinel_dispatch.py}` to track `rootConversationId` across parent conversations and child subagents (`black-hat-goldfish`, `black-hat-judge`, `/swarm` workers) and normalize both camelCase and snake_case hook payloads.
+- **MCP Tool Eager Loading (`_meta: {"antigravity/alwaysLoad": true}`)**: Marked primary MCP tools with `EAGER_TOOL_META` across all FastMCP and Node MCP servers so schemas load eagerly on Turn 1 without lazy tool-search latency.
+- **Native Agent Swarm (`/swarm`), `run_workflow` & `xhigh`/`max` Effort Tiers**: Enabled `enable-swarm` and `enable-programmatic-tools` in `src/ccpa_mock.py`, added `xhigh`/`max` thinking effort normalization in `sanitize_gemini_4_payload()`, exported `AGY_CLI_AUTO_COMPACT_OVERRIDE="80%"` and `JJ_PAGER="cat"`, and added `preloadSkills` to all 5 custom subagents plus `.antigravity-plugin/plugin.json` manifests.
+
 All notable changes to the **Antigravity Web Hub** project will be documented in this file.
 
 ---

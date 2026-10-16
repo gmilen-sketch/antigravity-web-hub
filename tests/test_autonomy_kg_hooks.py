@@ -525,7 +525,7 @@ class TestAutonomyKGHooks(unittest.TestCase):
         self.assertIn("<autonomy_session_context>", telemetry["injected_system_context"])
 
     def test_22_antigravity_2_0_core_upgrade_and_version_api(self):
-        """Verifies Antigravity 2.0 (2.22.0 Hub + 1.3.3 CLI + /healthz + /api/version + Claude Fable 5) support."""
+        """Verifies Antigravity 2.0 (2.24.0 Hub + 1.3.3 CLI + /healthz + /api/version + Claude Fable 5) support."""
         import pathlib
         install_txt = pathlib.Path(REPO_ROOT, "scripts", "install.sh").read_text(encoding="utf-8")
         self.assertIn("antigravity-hub-auto-updater-974169037036.us-central1.run.app/releases", install_txt)
@@ -535,7 +535,7 @@ class TestAutonomyKGHooks(unittest.TestCase):
         self.assertNotIn("1.16.5-6703236727046144", install_txt)
 
         start_txt = pathlib.Path(REPO_ROOT, "config", "start_hub.sh").read_text(encoding="utf-8")
-        self.assertIn('--override_ide_version="${ANTIGRAVITY_VERSION:-2.22.0}"', start_txt)
+        self.assertIn('--override_ide_version="${ANTIGRAVITY_VERSION:-2.24.0}"', start_txt)
 
         nginx_txt = pathlib.Path(REPO_ROOT, "config", "nginx.conf").read_text(encoding="utf-8")
         self.assertIn("location = /healthz", nginx_txt)
@@ -603,7 +603,7 @@ class TestAutonomyKGHooks(unittest.TestCase):
         self.assertEqual(violations, [], f"Internal IP / personal identifier violations found: {violations}")
 
     def test_24_sanitize_headers_injects_csrf_for_antigravity_2_0(self):
-        """Verifies sanitize_forwarded_headers injects x-codeium-csrf-token and Origin for Antigravity 2.22.0 RPCs."""
+        """Verifies sanitize_forwarded_headers injects x-codeium-csrf-token and Origin for Antigravity 2.24.0 RPCs."""
         from ccpa_mock import sanitize_forwarded_headers
         cleaned = sanitize_forwarded_headers({"Content-Type": "application/json", "Metadata-Flavor": "Google"})
         self.assertEqual(cleaned.get("Host"), "127.0.0.1:8081")
@@ -672,8 +672,29 @@ class TestAutonomyKGHooks(unittest.TestCase):
         self.assertEqual(map_model_name(333), "claude-sonnet-5-5")
         self.assertEqual(map_model_name(340), "claude-fable-5")
         self.assertEqual(map_model_name(354), "gemini-4-argon")
-        self.assertIn("v3.6.1", readme_txt)
+        self.assertIn("v3.7.0", readme_txt)
 
+
+
+    def test_28_antigravity_2240_root_conversation_id_and_eager_mcp(self):
+        """Verifies v3.7.0: Hub 2.24.0 + CLI 1.4.0, rootConversationId in hooks, eager MCP _meta, and .antigravity-plugin manifest."""
+        import pathlib
+        from hooks.sentinel_dispatch import normalize_hook_payload
+        from hooks.kg_pre_invocation_hook import extract_root_conversation_id
+        from knowledge_graph.kg_mcp_server import EAGER_TOOL_META
+        from ccpa_mock import sanitize_gemini_4_payload
+
+        norm = normalize_hook_payload({"tool_name": "run_command", "tool_input": {"CommandLine": "ls"}, "rootConversationId": "root-123"})
+        self.assertEqual(norm["toolName"], "run_command")
+        self.assertEqual(norm["rootConversationId"], "root-123")
+        self.assertEqual(extract_root_conversation_id({"rootConversationId": "root-abc", "conversationId": "child-xyz"}), "root-abc")
+        self.assertTrue(EAGER_TOOL_META.get("antigravity/alwaysLoad"))
+
+        cleaned = sanitize_gemini_4_payload({"generationConfig": {"thinkingConfig": {"thinkingLevel": "MAX"}}}, "gemini-4-argon")
+        self.assertEqual(cleaned["generationConfig"]["thinkingConfig"]["thinkingLevel"], "HIGH")
+
+        p_manifest = json.loads(pathlib.Path(REPO_ROOT, ".antigravity-plugin", "plugin.json").read_text(encoding="utf-8"))
+        self.assertEqual(p_manifest["version"], "3.7.0")
 
 
 if __name__ == "__main__":

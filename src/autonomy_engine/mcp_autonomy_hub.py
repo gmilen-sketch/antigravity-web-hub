@@ -5,7 +5,18 @@ import json
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from fastmcp import FastMCP
+try:
+    from fastmcp import FastMCP
+except ImportError:
+    class FastMCP:
+        def __init__(self, name="", **kwargs):
+            self.name = name
+        def tool(self, *args, **kwargs):
+            def decorator(f):
+                return f
+            return decorator
+        def run(self, *args, **kwargs):
+            pass
 from aaak_compressor import AAAKCompressor
 from graph_memory import BitemporalKnowledgeGraph
 from polyphonic_retriever import PolyphonicRetriever
@@ -13,6 +24,8 @@ from subagent_hydrator import SubagentContextHydrator
 from anti_overfitting_gate import AntiOverfittingGate
 from p0_quality_first_engine import P0QualityFirstEngine, run_self_test as run_p0_test
 from p1_quality_first_engine import P1QualityFirstEngine, run_self_test as run_p1_test
+
+EAGER_TOOL_META = {"antigravity/alwaysLoad": True}
 
 mcp = FastMCP("autonomy_engine")
 

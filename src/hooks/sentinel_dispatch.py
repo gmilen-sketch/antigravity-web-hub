@@ -57,6 +57,28 @@ def evaluate_tool_call(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {"decision": "allow"}
 
 
+def normalize_hook_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalizes hook payloads across Antigravity (toolName/toolArgs/rootConversationId) and Claude Code / generic harnesses (tool_name/tool_input/session_id)."""
+    if not isinstance(payload, dict):
+        return {}
+    out = dict(payload)
+    if "toolName" not in out and "tool_name" in out:
+        out["toolName"] = out["tool_name"]
+    if "toolArgs" not in out and "tool_input" in out:
+        out["toolArgs"] = out["tool_input"]
+    root_cid = (
+        out.get("rootConversationId")
+        or out.get("root_conversation_id")
+        or out.get("conversationId")
+        or out.get("conversation_id")
+        or out.get("session_id")
+        or ""
+    )
+    if root_cid:
+        out["rootConversationId"] = str(root_cid)
+    return out
+
+
 def main() -> None:
     try:
         raw = sys.stdin.read()

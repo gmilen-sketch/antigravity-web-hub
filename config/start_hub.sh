@@ -4,6 +4,8 @@ export CHROMIUM_FLAGS="--no-sandbox --disable-dev-shm-usage --disable-gpu --head
 
 # Force Go to use cgo system resolver to prevent local loopback resolution failures on GCE VM network configurations
 export GODEBUG=netdns=cgo
+export AGY_CLI_AUTO_COMPACT_OVERRIDE="${AGY_CLI_AUTO_COMPACT_OVERRIDE:-80%}"
+export JJ_PAGER="${JJ_PAGER:-cat}"
 
 # Ensure isolated temp profile directory for language_server
 LS_CHROME_DIR="/tmp/ls-chrome-data"
@@ -78,7 +80,7 @@ echo "Starting Antigravity 2.0 language_server (${ANTIGRAVITY_VERSION:-2.22.0}) 
 "$BIN_DIR/language_server" \
     --subclient_type=hub \
     --override_ide_name="antigravity" \
-    --override_ide_version="${ANTIGRAVITY_VERSION:-2.22.0}" \
+    --override_ide_version="${ANTIGRAVITY_VERSION:-2.24.0}" \
     --http_server_port=8081 \
     --model_api_client_type=ccpa \
     --cloud_code_endpoint="http://127.0.0.1:8083" \
