@@ -188,7 +188,7 @@ if os.path.isfile(cli_path):
         pass
 
 manifest = {
-    "hub_version": "3.5.0",
+    "hub_version": "3.7.0",
     "antigravity_core_version": "$AGY_HUB_VERSION",
     "antigravity_execution_id": "$AGY_HUB_EXEC_ID",
     "antigravity_cli_version": cli_ver or "$AGY_CLI_VERSION",
