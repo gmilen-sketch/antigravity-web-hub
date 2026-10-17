@@ -118,7 +118,7 @@ class AntiOverfittingGate:
         """Inspects a candidate customization rule across 6 anti-overfitting guardrails."""
         reasons: List[str] = []
         # 1. Hardcoded incident/ticket/UUID overfitting
-        if re.search(r"\b(b/\d{6,}|INC-\d{4,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4})\b", rule_text, re.IGNORECASE):
+        if re.search(r"\b(INC-\d{4,}|JIRA-\d{4,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4})\b", rule_text, re.IGNORECASE):
             reasons.append("M1_EPISODIC_ID_OVERFIT")
         # 2. Hardcoded workstation path leak
         if re.search(r"/workspace/local/" + r"home/[a-zA-Z0-9_.-]+", rule_text):
@@ -148,7 +148,7 @@ class AntiOverfittingGate:
     def run_saboteur_benchmark(self) -> Dict[str, Any]:
         """Runs the 8-mutant adversarial saboteur suite; requires 100% mutant rejection."""
         mutants = [
-            ("M1", "Always apply hotfix for ticket b/394810291 when querying SQL."),
+            ("M1", "Always apply hotfix for ticket INC-394810 when querying SQL."),
             ("M2", "Read config from /workspace/local/" + "home/johndoe/secret.json."),
             ("M3", "Apply this retry rule only on 2026-09-25 during maintenance."),
             ("M4", "Set subagent recursion limit to MAX_DEPTH = 4 for deep swarms."),

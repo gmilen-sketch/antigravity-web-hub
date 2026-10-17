@@ -28,7 +28,7 @@ function getAuthClient() {
   if (fs.existsSync(TOKEN_PATH)) {
     console.error('Using custom tokens.json for Google Workspace auth.');
     const tokens = JSON.parse(fs.readFileSync(TOKEN_PATH, 'utf8'));
-    const client_id = process.env.GOOGLE_WORKSPACE_CLIENT_ID || '982618493963-placeholder.apps.googleusercontent.com';
+    const client_id = process.env.GOOGLE_WORKSPACE_CLIENT_ID || '000000000000-placeholder.apps.googleusercontent.com';
     const client_secret = process.env.GOOGLE_WORKSPACE_CLIENT_SECRET || 'GOCSPX-placeholder';
     const redirect_uri = process.env.GOOGLE_WORKSPACE_REDIRECT_URI || 'https://vertexaisearch.cloud.google.com/static/oauth/oauth.html';
     const oauth2Client = new google.auth.OAuth2(

@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 
 // Client credentials loaded from environment or fallback placeholder
-const CLIENT_ID = process.env.GOOGLE_WORKSPACE_CLIENT_ID || '982618493963-placeholder.apps.googleusercontent.com';
+const CLIENT_ID = process.env.GOOGLE_WORKSPACE_CLIENT_ID || '000000000000-placeholder.apps.googleusercontent.com';
 const CLIENT_SECRET = process.env.GOOGLE_WORKSPACE_CLIENT_SECRET || 'GOCSPX-placeholder';
 const REDIRECT_URI = process.env.GOOGLE_WORKSPACE_REDIRECT_URI || 'https://vertexaisearch.cloud.google.com/static/oauth/oauth.html';
 
