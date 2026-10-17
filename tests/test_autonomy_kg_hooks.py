@@ -555,33 +555,10 @@ class TestAutonomyKGHooks(unittest.TestCase):
         import pathlib
         import re
 
+        from hooks.black_hat_analyzer import PROHIBITED_TOKEN_SHA256
         repo_path = pathlib.Path(REPO_ROOT)
         binary_files = []
-        # SHA-256 hashes of strictly internal Google codenames, personal identities, and internal test project IDs
-        forbidden_hashes = {
-            hashlib.sha256(w.encode("utf-8")).hexdigest()
-            for w in [
-                bytes.fromhex("6a6574736b69").decode(),
-                bytes.fromhex("676f6f676c6533").decode(),
-                bytes.fromhex("6d6f6d61").decode(),
-                bytes.fromhex("627567616e697a6572").decode(),
-                bytes.fromhex("6172676f6c6973").decode(),
-                bytes.fromhex("7a69706c696e65").decode(),
-                bytes.fromhex("72617074757265").decode(),
-                bytes.fromhex("7269667472756e6e6572").decode(),
-                bytes.fromhex("696e66696e6e6974796a6574").decode(),
-                bytes.fromhex("696e69745f676f6f676c65").decode(),
-                bytes.fromhex("67727465").decode(),
-                bytes.fromhex("31336a756c454e47323451657438576d35435164394a3843374e544579716a4b35437a6b65484b4b4c754867").decode(),
-                bytes.fromhex("66697273747465737470726f6a656374").decode(),
-                bytes.fromhex("7365636f6e642d746573742d70726f6a656374").decode(),
-                bytes.fromhex("637573746f6d65727465737473").decode(),
-                bytes.fromhex("616c746f7374726174").decode(),
-                bytes.fromhex("676d696c656e").decode(),
-                bytes.fromhex("636c6f75642d67746d").decode(),
-                bytes.fromhex("6d67656e63686576").decode(),
-            ]
-        }
+        forbidden_hashes = PROHIBITED_TOKEN_SHA256
         violations = []
 
         runtime_skip_dirs = {".git", "__pycache__", "node_modules", "bin", "builtin", "conversations", "venv", "assets", "brain"}
