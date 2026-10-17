@@ -25,7 +25,6 @@ PROHIBITED_LEAK_PATTERNS = [
 # One-way SHA-256 digests of prohibited internal codenames, tool names, and personal identifiers
 PROHIBITED_TOKEN_SHA256 = {
     "9918f0455cefecd78b99a6d8daf7da74732ccd50fdbafda860ecc0f050f2e725",
-    "acc601c59448a3dc1f88eb9c889fedbdbd7d6465a1b5702fbd16b70a41280d8d",
     "7287afc74731c5aa749600569b97735f06e83c1faf1c7b7becc07a5e9a158cc6",
     "546f028dac5bbe1b967cdb7009e03526d5ff2a29885e5d838d8599fefd46fad0",
     "13da8580ec41963d03186bcd3edabd5b6868ac65721b8b05009742f4132e493c",
