@@ -2,7 +2,8 @@
 """
 Continuous Spaced Half-Life Decay, Anderson ACT-R Power-Law Decay & Adamic-Adar Link Predictor.
 Includes ACT-R Task Activation Clamping Floor (A_min = -2.0) so dormant project nodes
-remain reactivatable without decaying to negative infinity.
+remain reactivatable without decaying to negative infinity, while evicting expired
+`steer:*` preference nodes whose `decayed_confidence < 0.15`.
 """
 
 import os
@@ -17,6 +18,7 @@ from typing import Dict, List, Any
 
 ACTR_CLAMP_FLOOR = -2.0
 ACTR_DECAY_PARAM = 0.5
+STEER_EVICTION_CONFIDENCE_FLOOR = 0.15
 
 DEFAULT_GRAPH_PATHS = [
     os.path.expanduser(os.environ.get("KG_JSON_PATH", "/mnt/data/knowledge_graph.json")),
@@ -72,15 +74,27 @@ def compute_adamic_adar_scores(graph_data: Dict[str, Any], score_threshold: floa
     return predicted_edges
 
 
-def apply_temporal_decay(graph_data: Dict[str, Any], half_life_days: float = 30.0) -> int:
+def apply_temporal_decay(
+    graph_data: Dict[str, Any],
+    half_life_days: float = 30.0,
+    now_ts: float = None,
+) -> int:
     """Applies both Ebbinghaus confidence decay and Anderson ACT-R power-law base-level
     activation B_i = max(A_min, ln(sum t_k^(-d))) with floor clamping at A_min = -2.0.
+    Evicts expired `steer:*` nodes whose `decayed_confidence < 0.15`.
     """
-    now = time.time()
+    now = now_ts if now_ts is not None else time.time()
     decay_lambda = math.log(2.0) / (half_life_days * 86400.0)
     decayed_count = 0
+    retained_nodes = []
+    evicted_steers = 0
 
     for n in graph_data.get("nodes", []):
+        nid = str(n.get("id", ""))
+        if nid.startswith("steer:auto_"):
+            evicted_steers += 1
+            continue
+
         props = n.setdefault("properties", {})
         c_0 = float(props.get("confidence", props.get("confidence_score", 1.0)))
         updated_iso = n.get("updated_at") or props.get("updated_at")
@@ -100,10 +114,23 @@ def apply_temporal_decay(graph_data: Dict[str, Any], half_life_days: float = 30.
             except Exception:
                 pass
 
+        if nid.startswith("steer:") and float(props.get("decayed_confidence", c_0)) < STEER_EVICTION_CONFIDENCE_FLOOR:
+            evicted_steers += 1
+            continue
+
+        retained_nodes.append(n)
+
+    graph_data["nodes"] = retained_nodes
+    graph_data["evicted_steers_count"] = evicted_steers
     return decayed_count
 
 
-def run_optimization(graph_path: str = None, predict: bool = True, decay: bool = True) -> Dict[str, Any]:
+def run_optimization(
+    graph_path: str = None,
+    predict: bool = True,
+    decay: bool = True,
+    now_ts: float = None,
+) -> Dict[str, Any]:
     active_path = graph_path or find_active_graph_path()
     if not os.path.exists(active_path):
         return {"status": "error", "message": f"Graph file not found at {active_path}"}
@@ -127,10 +154,11 @@ def run_optimization(graph_path: str = None, predict: bool = True, decay: bool =
         results["added_edges_count"] = added
 
     if decay:
-        decayed_nodes = apply_temporal_decay(graph_data)
+        decayed_nodes = apply_temporal_decay(graph_data, now_ts=now_ts)
         results["decayed_nodes_count"] = decayed_nodes
+        results["evicted_steers_count"] = graph_data.pop("evicted_steers_count", 0)
 
-    graph_data["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    graph_data["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now_ts or time.time()))
     with open(active_path, "w", encoding="utf-8") as f:
         json.dump(graph_data, f, indent=2)
 

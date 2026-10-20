@@ -1,21 +1,23 @@
 #!/usr/bin/env python3
-"""Universal Multi-Harness Hook Adapter (v1.0 Clean-Room Edition).
+"""Universal Multi-Harness Hook Adapter (v1.3 Clean-Room Edition).
 
 Bridges Antigravity CLI (`agy`) / Antigravity 2.0 (`PreInvocation`, `PreToolUse`, `Stop`)
 and non-Google harnesses such as Claude Code (`UserPromptSubmit`, `PreToolUse`, `Stop`),
 Cursor, Windsurf, and Cloud Code to the 3 core autonomy hooks:
   1. `kg_pre_invocation_hook.py` (Turn-1 Pinned KV-Cache + 2-Hop KG + 20-Skill Resolver)
-  2. `sentinel_dispatch.py`      (PreToolUse Safety & Parameter Sanitizer)
+  2. `sentinel_dispatch.py`      (PreToolUse Safety, OOM Guard & Parameter Sanitizer)
   3. `agent_stop_black_hat_gate.py` (2-Stage Stateless Goldfish -> Isolated Judge Stop Gate)
 """
 
 import json
 import os
+import resource
 import subprocess
 import sys
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 HOOKS_DIR = os.path.dirname(os.path.abspath(__file__))
+CHILD_RLIMIT_AS_BYTES = 24 * 1024 * 1024 * 1024  # 24 GiB virtual address space guard
 
 TOOL_NAME_MAP = {
     "Bash": "run_command",
@@ -25,6 +27,20 @@ TOOL_NAME_MAP = {
     "MultiEdit": "replace_file_content",
     "Read": "view_file",
 }
+
+
+def apply_child_rlimit_as(max_bytes: int = CHILD_RLIMIT_AS_BYTES) -> bool:
+    """Applies a 24 GiB RLIMIT_AS virtual memory ceiling to prevent runaway child OOMs."""
+    try:
+        soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+        new_soft = max_bytes if (soft == resource.RLIM_INFINITY or soft > max_bytes) else soft
+        new_hard = max_bytes if (hard == resource.RLIM_INFINITY or hard > max_bytes) else hard
+        if new_soft > new_hard:
+            new_soft = new_hard
+        resource.setrlimit(resource.RLIMIT_AS, (new_soft, new_hard))
+        return True
+    except Exception:
+        return False
 
 
 def adapt_pre_tool_use(raw_payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -53,6 +69,7 @@ def adapt_pre_tool_use(raw_payload: Dict[str, Any]) -> Dict[str, Any]:
         input=json.dumps(agy_payload),
         text=True,
         capture_output=True,
+        preexec_fn=lambda: apply_child_rlimit_as(CHILD_RLIMIT_AS_BYTES),
     )
     try:
         res = json.loads(proc.stdout.strip()) if proc.stdout.strip() else {"decision": "allow"}
@@ -94,6 +111,7 @@ def adapt_pre_invocation(raw_payload: Dict[str, Any]) -> Dict[str, Any]:
     )
     ephemeral = grounding.get("ephemeral_message", "")
     out: Dict[str, Any] = {
+        "decision": "allow",
         "rootConversationId": root_cid,
         "matched_skills": grounding.get("matched_skills", []),
         "pinned_entities_count": len(grounding.get("pinned_entities", [])),
@@ -108,7 +126,7 @@ def adapt_pre_invocation(raw_payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def adapt_stop(raw_payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Translates Antigravity or Claude Code Stop hook payload to Black-Hat Gate v4.8."""
+    """Translates Antigravity or Claude Code Stop hook payload to Black-Hat Gate v4.9."""
     from agent_stop_black_hat_gate import evaluate
 
     if raw_payload.get("stop_hook_active") is True:
@@ -126,8 +144,21 @@ def adapt_stop(raw_payload: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _resolve_event_mode(argv: List[str]) -> str:
+    """Resolves the hook event mode from `--event <mode>`, `--event=<mode>`, or positional `argv[1]`."""
+    if len(argv) <= 1:
+        return "pre-tool-use"
+    for idx in range(1, len(argv)):
+        arg = argv[idx]
+        if arg == "--event" and idx + 1 < len(argv):
+            return argv[idx + 1]
+        if arg.startswith("--event="):
+            return arg.split("=", 1)[1]
+    return argv[1]
+
+
 def main() -> None:
-    mode = sys.argv[1] if len(sys.argv) > 1 else "pre-tool-use"
+    mode = _resolve_event_mode(sys.argv)
     try:
         raw = sys.stdin.read()
         payload = json.loads(raw) if raw.strip() else {}

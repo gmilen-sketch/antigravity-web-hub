@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Anti-Overfitting & Customization Integrity Engine (`anti_overfitting_gate.py` v2.0).
-Combines Signal Detection Theory (`d' >= 1.80`, `|c| <= 0.35`) with a 6-Surface Customization Audit
-and an 8-Mutant Adversarial Saboteur Benchmark (`--saboteur-only`).
+"""Anti-Overfitting & Customization Integrity Engine (`anti_overfitting_gate.py` v2.1).
+Combines Signal Detection Theory (`d' >= 1.80`, `|c| <= 0.35`), Prompt Token-Growth (`<= 10%`) &
+Semantic Drift (`<= 0.15`) gating (`evaluate_patch`) with an 8-Surface Customization Audit
+(`inspect_candidate_rule`) and an 8-Mutant Adversarial Saboteur Benchmark (`--saboteur-only`).
 """
 import argparse
 import json
@@ -114,8 +115,43 @@ class AntiOverfittingGate:
             "passes_epc": passes_epc,
         }
 
+    def evaluate_rule_candidate(
+        self,
+        rule_text: str,
+        baseline_token_budget: int = 250,
+        semantic_drift: float = 0.05,
+        hits: int = 19,
+        total_positives: int = 20,
+        false_alarms: int = 1,
+        total_negatives: int = 20,
+    ) -> Dict[str, Any]:
+        """Runs both static 8-surface overfitting inspection and SDT/token-growth patch evaluation."""
+        inspect_res = self.inspect_candidate_rule(rule_text)
+        rule_tokens = max(1, len(rule_text.split()))
+        orig_tokens = max(baseline_token_budget, 1)
+        patch_res = self.evaluate_patch(
+            hits=hits,
+            total_positives=total_positives,
+            false_alarms=false_alarms,
+            total_negatives=total_negatives,
+            orig_token_len=orig_tokens,
+            new_token_len=orig_tokens + rule_tokens,
+            semantic_drift=semantic_drift,
+        )
+        rejected_reasons = list(inspect_res.get("rejected_reasons", []))
+        if not patch_res["passes_epc"]:
+            rejected_reasons.append(f"EPC_TOKEN_GROWTH_OR_DRIFT_EXCEEDED ({patch_res['growth_pct']}%)")
+        if not patch_res["passes_sdt"]:
+            rejected_reasons.append(f"SDT_SENSITIVITY_FAILED (d'={patch_res['d_prime']})")
+        return {
+            "passed": bool(inspect_res["passed"] and patch_res["approved"]),
+            "rejected_reasons": rejected_reasons,
+            "inspect": inspect_res,
+            "patch_eval": patch_res,
+        }
+
     def inspect_candidate_rule(self, rule_text: str) -> Dict[str, Any]:
-        """Inspects a candidate customization rule across 6 anti-overfitting guardrails."""
+        """Inspects a candidate customization rule across 8 anti-overfitting guardrails."""
         reasons: List[str] = []
         # 1. Hardcoded incident/ticket/UUID overfitting
         if re.search(r"\b(INC-\d{4,}|JIRA-\d{4,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4})\b", rule_text, re.IGNORECASE):

@@ -673,6 +673,76 @@ class TestAutonomyKGHooks(unittest.TestCase):
         p_manifest = json.loads(pathlib.Path(REPO_ROOT, ".antigravity-plugin", "plugin.json").read_text(encoding="utf-8"))
         self.assertEqual(p_manifest["version"], "3.7.0")
 
+    def test_29_dreaming_pipeline_e2e_6_scenarios_and_runtime_guards(self):
+        """Verifies Issue #1 6-scenario E2E Dreaming & Anti-Overfitting lifecycle and runtime livelock/OOM guards."""
+        import pathlib
+        from knowledge_graph.dreaming_engine import run_dreaming_pipeline
+        from hooks.multi_harness_hook_adapter import _resolve_event_mode, apply_child_rlimit_as
+        from hooks.sentinel_dispatch import check_schedule_cron_daemon_guard
+        from hooks.agent_stop_black_hat_gate import detect_orphaned_background_tasks, format_compact_subagent_wakeup
+
+        self.assertEqual(_resolve_event_mode(["prog", "--event", "PreToolUse"]), "PreToolUse")
+        self.assertTrue(apply_child_rlimit_as())
+        self.assertEqual(
+            check_schedule_cron_daemon_guard("schedule", {"CronExpression": "*/5 * * * *", "Prompt": "poll"})["decision"],
+            "deny",
+        )
+        self.assertFalse(
+            detect_orphaned_background_tasks([
+                {"tool_calls": [{"name": "schedule", "args": {"CronExpression": "*/5 * * * *", "Prompt": "x"}}]}
+            ])["passed"]
+        )
+        self.assertTrue(format_compact_subagent_wakeup("row " * 300, "/tmp/d.md", 800)["truncated"])
+
+        tmp_dir = tempfile.mkdtemp()
+        try:
+            graph_path = os.path.join(tmp_dir, "knowledge_graph.json")
+            warm_path = os.path.join(tmp_dir, "kg_warm_cache.json")
+            traces_dir = os.path.join(tmp_dir, "traces")
+            os.makedirs(traces_dir, exist_ok=True)
+            with open(graph_path, "w", encoding="utf-8") as f:
+                json.dump(
+                    {
+                        "version": "2.0-OKF-v0.2",
+                        "nodes": [
+                            {
+                                "id": "steer:expired01",
+                                "label": "Expired",
+                                "type": "UserPreference",
+                                "description": "Always run old linter before build",
+                                "properties": {"confidence": 0.95},
+                                "updated_at": "2025-01-01T00:00:00Z",
+                            }
+                        ],
+                        "edges": [],
+                    },
+                    f,
+                )
+            for idx, (sid, day) in enumerate([("s1", "2026-10-18"), ("s2", "2026-10-19")]):
+                with open(os.path.join(traces_dir, f"t{idx}.jsonl"), "w", encoding="utf-8") as f:
+                    f.write(
+                        json.dumps({
+                            "session_id": sid,
+                            "created_at": f"{day}T10:00:00Z",
+                            "type": "USER_INPUT",
+                            "content": "Always verify CLI flags via --help before invoking external tools.",
+                        })
+                        + "\n"
+                    )
+            res = run_dreaming_pipeline(
+                lookback_hours=48,
+                graph_path=graph_path,
+                trace_dirs=[traces_dir],
+                sdt_gate=AntiOverfittingGate(max_token_growth_pct=6.0),
+                now_ts=1792497600.0,
+                warm_cache_path=warm_path,
+            )
+            self.assertEqual(res["status"], "ok")
+            self.assertEqual(res["activated_steers_count"], 1)
+            self.assertGreaterEqual(res["evicted_decayed_count"], 1)
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
 
 if __name__ == "__main__":
     unittest.main()

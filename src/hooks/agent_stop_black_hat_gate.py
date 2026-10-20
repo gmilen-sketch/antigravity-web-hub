@@ -1270,5 +1270,72 @@ def verify_subagent_proof_freshness(transcript_path: str, turn_start_epoch: floa
         return False
 
 
+def detect_orphaned_background_tasks(turn_steps: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    C14f Orphaned Background-Task & Non-Daemon Cron Livelock Guard:
+    Scans turn steps for non-daemon background commands or unbounded recurring cron schedules
+    that were started without subsequent manage_task(Action='kill') cleanup.
+    """
+    unbounded_crons: List[str] = []
+    background_cmds: List[str] = []
+    killed_tasks: int = 0
+
+    for step in turn_steps:
+        for tc in step.get("tool_calls") or []:
+            if not isinstance(tc, dict):
+                continue
+            name = str(tc.get("name") or "")
+            args = _decode_args(tc.get("args"))
+            if name == "schedule":
+                cron_expr = str(args.get("CronExpression") or "").strip()
+                is_daemon = bool(args.get("IsDaemon") is True)
+                max_iter = args.get("MaxIterations")
+                if cron_expr and not is_daemon and not (isinstance(max_iter, int) and max_iter > 0):
+                    unbounded_crons.append(cron_expr)
+            elif name == "run_command":
+                is_daemon = bool(args.get("IsDaemon") is True)
+                wait_ms = args.get("WaitMsBeforeAsync", 5000)
+                cmd_line = str(args.get("CommandLine") or "")
+                if not is_daemon and isinstance(wait_ms, int) and wait_ms <= 500 and "nohup" not in cmd_line:
+                    background_cmds.append(cmd_line[:80])
+            elif name == "manage_task" and str(args.get("Action") or "") == "kill":
+                killed_tasks += 1
+
+    active_orphans = max(0, len(background_cmds) - killed_tasks) + len(unbounded_crons)
+    return {
+        "passed": active_orphans == 0,
+        "unbounded_crons": unbounded_crons,
+        "background_commands_started": len(background_cmds),
+        "tasks_killed": killed_tasks,
+        "active_orphans": active_orphans,
+    }
+
+
+def format_compact_subagent_wakeup(
+    summary_text: str, detail_path: str = "", max_bytes: int = 800
+) -> Dict[str, Any]:
+    """
+    C14g Subagent Return Payload Cap (< 800 B):
+    Ensures subagent wakeup messages remain below max_bytes while referencing detail_path on disk.
+    """
+    raw_bytes = len(summary_text.encode("utf-8"))
+    if raw_bytes <= max_bytes:
+        return {
+            "passed": True,
+            "wakeup_text": summary_text,
+            "byte_length": raw_bytes,
+            "truncated": False,
+        }
+    suffix = f"\n[Full dossier: {detail_path}]" if detail_path else "\n[Truncated to <800B]"
+    budget = max(64, max_bytes - len(suffix.encode("utf-8")) - 3)
+    clipped = summary_text.encode("utf-8")[:budget].decode("utf-8", errors="ignore").rstrip() + "..." + suffix
+    return {
+        "passed": len(clipped.encode("utf-8")) <= max_bytes,
+        "wakeup_text": clipped,
+        "byte_length": len(clipped.encode("utf-8")),
+        "truncated": True,
+    }
+
+
 if __name__ == "__main__":
     main()
