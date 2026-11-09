@@ -1,0 +1,27 @@
+{
+  "black-hat-subagent-pre-tool-sentinel": {
+    "enabled": true,
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ../../src/hooks/run_hook_safe.sh sentinel_dispatch.py",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  },
+  "black-hat-subagent-return-gate": {
+    "enabled": true,
+    "Stop": [
+      {
+        "type": "command",
+        "command": "bash ../../src/hooks/run_hook_safe.sh agent_stop_black_hat_gate.py",
+        "timeout": 15
+      }
+    ]
+  }
+}

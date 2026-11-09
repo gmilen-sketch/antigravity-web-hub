@@ -96,7 +96,12 @@ def apply_temporal_decay(
             continue
 
         props = n.setdefault("properties", {})
-        c_0 = float(props.get("confidence", props.get("confidence_score", 1.0)))
+        c_0 = float(
+            props.setdefault(
+                "base_confidence",
+                props.get("confidence", props.get("confidence_score", 1.0)),
+            )
+        )
         updated_iso = n.get("updated_at") or props.get("updated_at")
 
         if updated_iso:

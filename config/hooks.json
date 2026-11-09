@@ -1,0 +1,44 @@
+{
+  "sentinel-policy-guard": {
+    "enabled": true,
+    "PreToolUse": [
+      {
+        "matcher": "read_file|view_file|multimodal_view_file|run_command|write_to_file|replace_file_content|write_file|edit_file|multi_replace_file_content|invoke_subagent|send_message|schedule|manage_subagents|manage_task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.gemini/antigravity/bin/hooks/run_hook_safe.sh\" sentinel_dispatch.py",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  },
+  "knowledge-graph-grounding": {
+    "enabled": true,
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "bash \"$HOME/.gemini/antigravity/bin/hooks/run_hook_safe.sh\" kg_pre_invocation_hook.py",
+        "timeout": 15
+      }
+    ]
+  },
+  "black-hat-completion-gate": {
+    "enabled": true,
+    "PostInvocation": [
+      {
+        "type": "command",
+        "command": "bash \"$HOME/.gemini/antigravity/bin/hooks/run_hook_safe.sh\" black_hat_in_progress_ux_hook.py",
+        "timeout": 10
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "bash \"$HOME/.gemini/antigravity/bin/hooks/run_hook_safe.sh\" agent_stop_black_hat_gate.py",
+        "timeout": 15
+      }
+    ]
+  }
+}

@@ -8,12 +8,13 @@ Executes automatically BEFORE every model turn (<50ms budget, fail-open).
 from collections import defaultdict
 import datetime
 import json
+import math
 import os
 import re
 import sys
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-KG_CACHE_PATH = "/dev/shm/kg_warm_cache.json"
+KG_CACHE_PATH = os.environ.get("KG_WARM_CACHE_PATH", "/dev/shm/agw_kg_warm_cache.json")
 KG_FALLBACK_PATHS = [
     os.path.expanduser(os.environ.get("KG_JSON_PATH", "/mnt/data/knowledge_graph.json")),
     os.path.expanduser("~/.gemini/antigravity/knowledge_graph.json"),
@@ -167,6 +168,7 @@ def extract_recent_inputs(transcript_path: str, max_turns: int = 3) -> List[str]
                             if content:
                                 content = re.sub(r"<CONTEXT_SUMMARY>[\s\S]*?</CONTEXT_SUMMARY>", "", content)
                                 content = re.sub(r"<ADDITIONAL_METADATA>[\s\S]*?</ADDITIONAL_METADATA>", "", content)
+                                content = re.sub(r"<SYSTEM_MESSAGE>[\s\S]*?</SYSTEM_MESSAGE>", "", content)
                                 content = re.sub(r"</?USER_REQUEST>", "", content).strip()
                                 if content and not content.startswith("Error: The stream was interrupted"):
                                     recent_inputs.append(content)
@@ -280,7 +282,7 @@ def resolve_hybrid_entities(text: str, kg_data: Dict[str, Any], use_alias_map: b
                 score += 10
 
         if score >= 25:
-            if nid.startswith(("infra:", "model:", "mcp:", "workload:", "project:", "skill:")):
+            if nid.startswith(("doc:", "infra:", "model:", "mcp:", "workload:", "project:", "skill:")):
                 score += 20
             elif nid.startswith("task:"):
                 score += 10
@@ -293,7 +295,10 @@ def resolve_hybrid_entities(text: str, kg_data: Dict[str, Any], use_alias_map: b
         if sc >= 45:
             for nb_id in adj_neighbors.get(orig_id, set()):
                 if nb_id in node_by_id:
-                    propagated_scores[nb_id] = max(propagated_scores.get(nb_id, 0), max(45, sc - 10))
+                    if nb_id in raw_scores:
+                        propagated_scores[nb_id] = max(propagated_scores[nb_id], raw_scores[nb_id] + 15)
+                    else:
+                        propagated_scores[nb_id] = max(propagated_scores.get(nb_id, 0), 45)
 
     scored_nodes = []
     for orig_id, score in propagated_scores.items():
@@ -540,11 +545,58 @@ def main() -> None:
 
     transcript_path = str(payload.get("transcriptPath") or payload.get("transcript_path") or "")
     root_conversation_id = extract_root_conversation_id(payload)
+    conv_id = str(payload.get("conversationId") or payload.get("conversation_id") or root_conversation_id).strip()
+    artifact_dir = str(payload.get("artifactDirectoryPath") or payload.get("artifact_directory_path") or "")
+    cwd = str(payload.get("cwd") or payload.get("workingDirectory") or os.getcwd() or "")
+
+    # Crash-recovery: restore any held-back deliverable cards on a fresh top-level turn start
+    if artifact_dir and (not conv_id or conv_id == root_conversation_id):
+        try:
+            from black_hat_in_progress_ux_hook import (
+                find_active_verification_subagent,
+                restore_deliverable_artifact_cards,
+            )
+            if not find_active_verification_subagent(transcript_path):
+                restore_deliverable_artifact_cards(artifact_dir)
+        except Exception:
+            pass
+
     recent_inputs = extract_recent_inputs(transcript_path, max_turns=3)
     direct_prompt = str(payload.get("prompt") or payload.get("user_prompt") or "").strip()
     if direct_prompt and direct_prompt not in recent_inputs:
         recent_inputs.append(direct_prompt)
-    context_text = " \n ".join(recent_inputs) if recent_inputs else ""
+
+    # Carry over explicit Option 1 / Option 2 definition on bare numeric replies ("[1/2]")
+    if recent_inputs:
+        resolved_choice = resolve_option_choice_carryover(
+            recent_inputs[-1], extract_recent_planner_outputs(transcript_path, max_outputs=2)
+        )
+        if resolved_choice != recent_inputs[-1]:
+            recent_inputs[-1] = resolved_choice
+
+    context_text = strip_xdg_non_portfolio_paths(" \n ".join(recent_inputs) if recent_inputs else "")
+    mode_info = classify_execution_mode(context_text, cwd=cwd)
+
+    # Per-turn /dev/shm KG cache fast-path for Steps 2..N inside the same user turn
+    cached_turn = _load_per_turn_kg_cache(root_conversation_id, len(recent_inputs), context_text)
+    if cached_turn is not None:
+        print(json.dumps(cached_turn))
+        return
+
+    msg_lines: List[str] = []
+    if mode_info["mode"] == "SWE_BENCHMARK_MODE":
+        if should_inject_turn0_kernel(max(1, len(recent_inputs))):
+            msg_lines.append(mode_info["kernel_banner"])
+        output = (
+            enforce_strict_pre_invocation_schema(
+                {"injectSteps": [{"systemMessage": {"systemMessage": scrub("\n".join(msg_lines))}}]}
+            )
+            if msg_lines
+            else {}
+        )
+        _save_per_turn_kg_cache(root_conversation_id, len(recent_inputs), context_text, output)
+        print(json.dumps(output))
+        return
 
     kg_data = load_kg()
     pinned_entities, delta_entities = resolve_hybrid_entities_pinned_and_delta(
@@ -553,8 +605,9 @@ def main() -> None:
     matched_entities = pinned_entities + delta_entities
     matched_skills = resolve_target_skills(context_text)
 
-    msg_lines: List[str] = []
-    if matched_entities:
+    if matched_entities and should_inject_turn0_kernel(
+        max(1, len(recent_inputs)), bool(delta_entities), bool(matched_skills)
+    ):
         msg_lines.append("🧠 [KNOWLEDGE GRAPH AUTOMATIC PRE-INVOCATION GROUNDING (SSOT)]")
         msg_lines.append(
             "- Single Source of Truth (SSOT): The Knowledge Graph is the Single Source of Truth. "
@@ -578,15 +631,18 @@ def main() -> None:
         for sname, spath in matched_skills:
             msg_lines.append(f"- Skill: `{sname}` -> file://{spath}")
             msg_lines.append(
-                f"  * Invariant: View SKILL.md via view_file before executing scripts or CLI tools belonging to `{sname}`."
+                f"  * Invariant: Read SKILL.md via read_file before executing scripts or CLI tools belonging to `{sname}`."
             )
         msg_lines.append("")
 
     if msg_lines:
-        output = {"injectSteps": [{"ephemeralMessage": scrub("\n".join(msg_lines))}]}
+        output = enforce_strict_pre_invocation_schema(
+            {"injectSteps": [{"systemMessage": {"systemMessage": scrub("\n".join(msg_lines))}}]}
+        )
     else:
         output = {}
 
+    _save_per_turn_kg_cache(root_conversation_id, len(recent_inputs), context_text, output)
     print(json.dumps(output))
 
 
@@ -655,9 +711,350 @@ def build_dso_subagent_orientation_banner(active_subagent_count: int) -> str:
     )
 
 
-def run_pre_invocation_grounding(prompt_text: str, session_id: str = "live-session", root_conversation_id: str = "") -> Dict[str, Any]:
+# ==============================================================================
+# v3.8 Clean-Room Upgrades (AGW-W12-01..04, AGW-W12-09):
+# - AGW-W12-01: Dual-Mode Execution Classifier (SWE_BENCHMARK_MODE vs PORTFOLIO_MODE)
+# - AGW-W12-02: Turn-0 Frozen KV-Cache Kernel Guard
+# - AGW-W12-03: Strict PreInvocation Schema Sanitizer (injectSteps only)
+# - AGW-W12-04: Single-Pass Current-Turn Transcript Inspector
+# - AGW-W12-09: Sub-Millisecond IDF Token Index & <SYSTEM_MESSAGE> Stripper
+# ==============================================================================
+
+UNIVERSAL_SWE_KERNEL = (
+    "[UNIVERSAL SWE EXECUTION KERNEL]:\n"
+    "1. End-to-End Verification: Run targeted unit/integration tests and check exit codes after every mutation.\n"
+    "2. Non-Interactive VCS & CLI Safety: Pass non-interactive flags (--no-edit, -m) to git/VCS commands.\n"
+    "3. Reactive Wakeup Discipline: Never poll background tasks in a sleep loop; wait for completion wakeup.\n"
+    "4. Clean Workspace Hygiene: Never leave .pyc, __pycache__, .bak, or temporary scratch files in tracked directories."
+)
+
+_BENCHMARK_PATH_RE = re.compile(
+    r"(?:/workspace(?:/|$)|/testbed(?:/|$)|/swebench/|/harbor/|/tbench/|/eval_sandbox/|SWE-bench|Terminal-Bench)",
+    re.IGNORECASE,
+)
+_SHM_INTERNAL_PREFIXES = (
+    "agw_",
+    "kg_",
+    "c9_",
+    "gf_",
+    "bh_",
+    "sbx_",
+    "isolated_sandbox",
+    "dreaming_",
+    ".gemini",
+    "mfs",
+)
+_XDG_PATH_RE = re.compile(
+    r"(?:~|\$HOME|/[A-Za-z0-9_.\-/]+)?/\.(?:config|cache|local)/[A-Za-z0-9_.\-/]*",
+    re.IGNORECASE,
+)
+
+
+def strip_xdg_non_portfolio_paths(text: str) -> str:
+    """Strips XDG user dot-directories (~/.config, ~/.cache, ~/.local) before portfolio skill trigger matching."""
+    if not text:
+        return ""
+    return _XDG_PATH_RE.sub(" ", text)
+
+
+def _is_shm_swe_workspace(cwd: str) -> bool:
+    """Returns True for isolated `/dev/shm/<task_dir>` SWE workspaces while excluding internal scratch/cache files."""
+    if not cwd:
+        return False
+    norm = os.path.normpath(cwd.strip())
+    if not norm.startswith("/dev/shm/"):
+        return False
+    rel = norm[len("/dev/shm/") :]
+    top = rel.split("/", 1)[0]
+    if not top or any(top.startswith(pfx) for pfx in _SHM_INTERNAL_PREFIXES):
+        return False
+    if top.endswith((".json", ".jsonl", ".md", ".log", ".tmp", ".lock")):
+        return False
+    return True
+
+
+def classify_execution_mode(
+    prompt_text: str,
+    cwd: str = "",
+    env: Optional[Dict[str, str]] = None,
+) -> Dict[str, Any]:
+    """AGW-W12-01 + v3.9 `/dev/shm/<dir>` SWE Router: Classifies session into SWE_BENCHMARK_MODE or PORTFOLIO_MODE."""
+    env_map = env if env is not None else os.environ
+    explicit_mode = str(env_map.get("AGW_EXECUTION_MODE", "")).strip().upper()
+    if explicit_mode == "PORTFOLIO_MODE":
+        return {
+            "mode": "PORTFOLIO_MODE",
+            "suppress_domain_prose_rules": False,
+            "kernel_banner": "",
+            "min_stop_seconds": 9,
+        }
+    if explicit_mode == "SWE_BENCHMARK_MODE" or env_map.get("AGW_BENCHMARK_MODE") == "1":
+        return {
+            "mode": "SWE_BENCHMARK_MODE",
+            "suppress_domain_prose_rules": True,
+            "kernel_banner": UNIVERSAL_SWE_KERNEL,
+            "min_stop_seconds": 3,
+        }
+    clean_prompt = strip_xdg_non_portfolio_paths(prompt_text or "")
+    if _is_shm_swe_workspace(cwd) or _BENCHMARK_PATH_RE.search(cwd or "") or _BENCHMARK_PATH_RE.search(clean_prompt):
+        return {
+            "mode": "SWE_BENCHMARK_MODE",
+            "suppress_domain_prose_rules": True,
+            "kernel_banner": UNIVERSAL_SWE_KERNEL,
+            "min_stop_seconds": 3,
+        }
+    return {
+        "mode": "PORTFOLIO_MODE",
+        "suppress_domain_prose_rules": False,
+        "kernel_banner": "",
+        "min_stop_seconds": 9,
+    }
+
+
+def extract_recent_planner_outputs(transcript_path: str, max_outputs: int = 2) -> List[str]:
+    """Extracts recent PLANNER_RESPONSE text blocks for numeric `[1/2]` option reply carryover."""
+    if not transcript_path or not os.path.exists(transcript_path):
+        return []
+    out: List[str] = []
+    try:
+        with open(transcript_path, "r", encoding="utf-8", errors="ignore") as fh:
+            for line in fh:
+                if '"PLANNER_RESPONSE"' not in line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                    if obj.get("type") == "PLANNER_RESPONSE" and obj.get("content"):
+                        out.append(str(obj["content"]))
+                except Exception:
+                    continue
+    except Exception:
+        return []
+    return out[-max_outputs:]
+
+
+def resolve_option_choice_carryover(latest_input: str, prior_planner_outputs: List[Any]) -> str:
+    """Binds bare numeric replies ('1', 'option 1', '2', 'option 2') back to the offered Option text."""
+    raw = (latest_input or "").strip()
+    m = re.match(r"^(?:option\s*)?([12])(?:\b|[.,!:\-\s].*)?$", raw, re.IGNORECASE)
+    if not m or len(raw.split()) > 12:
+        return latest_input
+    choice_num = m.group(1)
+    opt_re = re.compile(
+        rf"(?:\*\*)?Option\s+{choice_num}\b[^:\n]*:\s*([^\n]+)",
+        re.IGNORECASE,
+    )
+    for item in reversed(prior_planner_outputs or []):
+        txt = str(item.get("content") or "") if isinstance(item, dict) else str(item or "")
+        hit = opt_re.search(txt)
+        if hit:
+            desc = re.sub(r"\*+", "", hit.group(1)).strip()
+            return f"{raw} -> Selected Option {choice_num}: {desc}"
+    return latest_input
+
+
+def _turn_cache_path(root_cid: str) -> str:
+    safe_cid = re.sub(r"[^A-Za-z0-9_.-]", "_", root_cid or "live")[:64]
+    base_dir = os.environ.get("AGW_TURN_CACHE_DIR", "/dev/shm")
+    return os.path.join(base_dir, f"agw_turn_cache_{safe_cid}.json")
+
+
+def _compute_turn_cache_key(user_turn_count: int, context_text: str) -> str:
+    import hashlib
+
+    kg_stamp = "0:0"
+    for p in [KG_CACHE_PATH] + list(KG_FALLBACK_PATHS):
+        if os.path.exists(p):
+            try:
+                st = os.stat(p)
+                kg_stamp = f"{st.st_mtime_ns}:{st.st_size}"
+            except OSError:
+                pass
+            break
+    h = hashlib.sha256(f"{user_turn_count}|{kg_stamp}|{context_text}".encode("utf-8")).hexdigest()[:20]
+    return h
+
+
+def _load_per_turn_kg_cache(
+    root_cid: str, user_turn_count: int, context_text: str = ""
+) -> Optional[Dict[str, Any]]:
+    if not root_cid or root_cid == "live-session" or os.environ.get("AGW_DISABLE_TURN_CACHE") == "1":
+        return None
+    cp = _turn_cache_path(root_cid)
+    if not os.path.isfile(cp):
+        return None
+    try:
+        with open(cp, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        if isinstance(data, dict) and data.get("key") == _compute_turn_cache_key(user_turn_count, context_text):
+            out = data.get("output")
+            if isinstance(out, dict):
+                return out
+    except Exception:
+        pass
+    return None
+
+
+def _save_per_turn_kg_cache(
+    root_cid: str, user_turn_count: int, context_text: str, output: Dict[str, Any]
+) -> None:
+    if not root_cid or root_cid == "live-session" or os.environ.get("AGW_DISABLE_TURN_CACHE") == "1":
+        return
+    cp = _turn_cache_path(root_cid)
+    parent = os.path.dirname(cp)
+    if not os.path.isdir(parent) or not os.access(parent, os.W_OK):
+        return
+    tmp = f"{cp}.{os.getpid()}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(
+                {"key": _compute_turn_cache_key(user_turn_count, context_text), "output": output},
+                fh,
+            )
+        os.replace(tmp, cp)
+    except Exception:
+        if os.path.exists(tmp):
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+
+
+def read_turn_hook_cache(
+    root_cid: str, user_turn_count: int, context_text: str = ""
+) -> Optional[Dict[str, Any]]:
+    """Public helper returning cached PreInvocation hook output for `(root_cid, user_turn_count)`."""
+    return _load_per_turn_kg_cache(root_cid, user_turn_count, context_text)
+
+
+def write_turn_hook_cache(
+    root_cid: str, user_turn_count: int, output: Dict[str, Any], context_text: str = ""
+) -> None:
+    """Public helper persisting PreInvocation hook output for `(root_cid, user_turn_count)`."""
+    _save_per_turn_kg_cache(root_cid, user_turn_count, context_text, output)
+
+
+def should_inject_turn0_kernel(
+    user_turn_count: int,
+    has_delta_entities: bool = False,
+    has_new_skills: bool = False,
+) -> bool:
+    """AGW-W12-02: Injects static kernel on Turn 0/1 and suppresses redundant re-injection on Turn >= 2."""
+    if user_turn_count <= 1:
+        return True
+    return bool(has_delta_entities or has_new_skills)
+
+
+def enforce_strict_pre_invocation_schema(raw_output: Dict[str, Any]) -> Dict[str, Any]:
+    """AGW-W12-03 + S-05: Enforces Antigravity 2.29+ PreInvocation HookSystemMessage schema."""
+    if not isinstance(raw_output, dict):
+        return {}
+    steps = raw_output.get("injectSteps")
+    if not isinstance(steps, list) or not steps:
+        return {}
+    clean_steps = []
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        sm = step.get("systemMessage")
+        if isinstance(sm, dict):
+            msg = sm.get("systemMessage")
+            meta = sm.get("metadata") if isinstance(sm.get("metadata"), dict) else None
+            if (isinstance(msg, str) and msg.strip()) or meta:
+                entry: Dict[str, Any] = {"systemMessage": str(msg or "")}
+                if meta:
+                    entry["metadata"] = meta
+                clean_steps.append({"systemMessage": entry})
+                continue
+        elif isinstance(sm, str) and sm.strip():
+            clean_steps.append({"systemMessage": {"systemMessage": sm}})
+            continue
+        legacy_msg = step.get("ephemeralMessage")
+        if isinstance(legacy_msg, str) and legacy_msg.strip():
+            clean_steps.append({"systemMessage": {"systemMessage": legacy_msg}})
+    return {"injectSteps": clean_steps} if clean_steps else {}
+
+
+def inspect_current_turn_state(steps: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """AGW-W12-04: Single-pass reverse scan from latest USER_INPUT for current-turn mutations and tests."""
+    mutation_tools = {"write_file", "edit_file", "replace_file_content", "write_to_file", "multi_replace_file_content"}
+    current_turn_mutations = 0
+    post_mutation_test_ran = False
+    seen_mutation_in_reverse = False
+
+    for step in reversed(steps or []):
+        stype = str(step.get("type") or step.get("source") or "").upper()
+        if stype in ("USER_INPUT", "USER_EXPLICIT", "USER"):
+            break
+        for tc in step.get("tool_calls") or []:
+            tname = str(tc.get("name") or tc.get("tool_name") or "")
+            if tname in mutation_tools:
+                current_turn_mutations += 1
+                seen_mutation_in_reverse = True
+            elif tname == "run_command" and not seen_mutation_in_reverse:
+                args = tc.get("args") or tc.get("arguments") or {}
+                cmd = str(args.get("CommandLine") or args.get("command") or "")
+                if re.search(r"\b(pytest|unittest|npm\s+test|cargo\s+test|go\s+test)\b", cmd):
+                    post_mutation_test_ran = True
+
+    return {
+        "current_turn_mutations": current_turn_mutations,
+        "post_mutation_test_ran": post_mutation_test_ran,
+    }
+
+
+def resolve_hybrid_entities_idf(
+    query: str,
+    nodes: List[Dict[str, Any]],
+    top_k: int = 5,
+) -> List[Dict[str, Any]]:
+    """AGW-W12-09: Sub-millisecond IDF-weighted token index over Knowledge Graph nodes."""
+    clean_q = re.sub(r"<SYSTEM_MESSAGE>[\s\S]*?</SYSTEM_MESSAGE>", "", query or "")
+    q_tokens = [
+        stem_token(w)
+        for w in re.findall(r"[a-z0-9_\-]{2,}", clean_q.lower())
+        if w not in STOP_WORDS
+    ]
+    if not q_tokens or not nodes:
+        return []
+
+    n_docs = len(nodes)
+    df: Dict[str, int] = {}
+    node_toks: List[set] = []
+    for node in nodes:
+        text = " ".join([
+            str(node.get("id", "")),
+            str(node.get("label", "")),
+            " ".join(str(a) for a in (node.get("aliases") or [])),
+        ]).lower()
+        toks = {stem_token(w) for w in re.findall(r"[a-z0-9_\-]{2,}", text) if w not in STOP_WORDS}
+        node_toks.append(toks)
+        for t in toks:
+            df[t] = df.get(t, 0) + 1
+
+    scored = []
+    for idx, (node, toks) in enumerate(zip(nodes, node_toks)):
+        score = 0.0
+        for qt in set(q_tokens):
+            if qt in toks:
+                idf = math.log(1.0 + (n_docs - df.get(qt, 0) + 0.5) / (df.get(qt, 0) + 0.5))
+                score += max(0.1, idf)
+        if score > 0.0:
+            item = dict(node)
+            item["idf_score"] = round(score, 4)
+            scored.append((score, -idx, item))
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    return [item for _, _, item in scored[:top_k]]
+
+
+def run_pre_invocation_grounding(
+    prompt_text: str,
+    session_id: str = "live-session",
+    root_conversation_id: str = "",
+    cwd: str = "",
+) -> Dict[str, Any]:
     """Executes live PreInvocation KG + OKF v0.2 + 20-Skill grounding for an active Antigravity Web session."""
     clean_prompt = strip_canary_headers(prompt_text or "")
+    mode_info = classify_execution_mode(clean_prompt, cwd=cwd)
     kg_data = load_kg()
     pinned_entities = resolve_hybrid_entities(clean_prompt, kg_data, use_alias_map=True) if clean_prompt and kg_data else []
     for ent in pinned_entities:
@@ -674,6 +1071,8 @@ def run_pre_invocation_grounding(prompt_text: str, session_id: str = "live-sessi
     matched_skills = resolve_target_skills(clean_prompt)
 
     msg_lines: List[str] = []
+    if mode_info["mode"] == "SWE_BENCHMARK_MODE" and mode_info["kernel_banner"]:
+        msg_lines.append(mode_info["kernel_banner"])
     if pinned_entities:
         msg_lines.append("🧠 [KNOWLEDGE GRAPH AUTOMATIC PRE-INVOCATION GROUNDING (SSOT)]")
         msg_lines.append("<session_pinned_entities>")
@@ -683,14 +1082,22 @@ def run_pre_invocation_grounding(prompt_text: str, session_id: str = "live-sessi
         msg_lines.append("🎯 [MANDATORY SKILL ACTIVATION]")
         for sname, spath in matched_skills:
             msg_lines.append(f"- Skill: `{sname}` -> file://{spath}")
+            msg_lines.append(
+                f"  * Invariant: Read SKILL.md via read_file before executing scripts or CLI tools belonging to `{sname}`."
+            )
 
+    rendered = scrub("\n".join(msg_lines)) if msg_lines else ""
     return {
         "session_id": session_id,
         "root_conversation_id": root_conversation_id or session_id,
+        "execution_mode": mode_info["mode"],
+        "min_stop_seconds": mode_info.get("min_stop_seconds", 9),
         "pinned_entities": pinned_entities,
         "hop2_neighborhood": hop2_map,
         "matched_skills": [{"name": n, "path": scrub(p)} for n, p in matched_skills],
-        "ephemeral_message": scrub("\n".join(msg_lines)) if msg_lines else "",
+        "system_message": rendered,
+        "ephemeral_message": rendered,
+        "injectSteps": [{"systemMessage": {"systemMessage": rendered}}] if rendered else [],
     }
 
 

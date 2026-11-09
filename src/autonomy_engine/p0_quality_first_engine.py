@@ -19,8 +19,27 @@ import time
 from typing import Any, Dict, List
 
 
-INTRADAY_LESSONS_PATH = "/dev/shm/intraday_lessons.jsonl" if os.path.exists("/dev/shm") else "/tmp/intraday_lessons.jsonl"
+INTRADAY_LESSONS_PATH = os.environ.get(
+    "AGW_INTRADAY_LESSONS_PATH",
+    "/dev/shm/agw_intraday_lessons.jsonl" if os.path.exists("/dev/shm") else "/tmp/agw_intraday_lessons.jsonl",
+)
 LESSON_TTL_SECONDS = 12 * 3600
+
+
+def _resolve_writable_lessons_path() -> str:
+    path = INTRADAY_LESSONS_PATH
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a", encoding="utf-8"):
+            pass
+        try:
+            os.chmod(path, 0o666)
+        except Exception:
+            pass
+        return path
+    except PermissionError:
+        uid = getattr(os, "getuid", lambda: 0)()
+        return f"/tmp/agw_intraday_lessons_{uid}.jsonl"
 
 
 class P0QualityFirstEngine:
@@ -63,19 +82,20 @@ class P0QualityFirstEngine:
             "created_at": time.time(),
             "ttl_seconds": LESSON_TTL_SECONDS,
         }
-        os.makedirs(os.path.dirname(INTRADAY_LESSONS_PATH), exist_ok=True)
-        with open(INTRADAY_LESSONS_PATH, "a", encoding="utf-8") as f:
+        target_path = _resolve_writable_lessons_path()
+        with open(target_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry) + "\n")
         return entry
 
     @staticmethod
     def cb3_get_active_lessons(fqn_tool: str) -> List[Dict[str, Any]]:
         """Returns non-expired lessons scoped strictly to `fqn_tool`."""
-        if not os.path.exists(INTRADAY_LESSONS_PATH):
+        target_path = _resolve_writable_lessons_path()
+        if not os.path.exists(target_path):
             return []
         now = time.time()
         active = []
-        with open(INTRADAY_LESSONS_PATH, "r", encoding="utf-8", errors="ignore") as f:
+        with open(target_path, "r", encoding="utf-8", errors="ignore") as f:
             for line in f:
                 if not line.strip():
                     continue

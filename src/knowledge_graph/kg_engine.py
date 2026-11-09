@@ -17,7 +17,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [KG-ENGINE] %(messag
 
 DEFAULT_KG_JSON = os.path.expanduser(os.environ.get("KG_JSON_PATH", "/mnt/data/knowledge_graph.json"))
 FALLBACK_KG_JSON = os.path.expanduser("~/.gemini/antigravity/knowledge_graph.json")
-WARM_CACHE_PATH = "/dev/shm/kg_warm_cache.json"
+WARM_CACHE_PATH = os.environ.get("KG_WARM_CACHE_PATH", "/dev/shm/agw_kg_warm_cache.json")
 
 class KnowledgeGraphEngine:
     def __init__(self, json_path: Optional[str] = None):

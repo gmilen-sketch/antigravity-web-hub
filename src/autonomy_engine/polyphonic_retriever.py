@@ -60,6 +60,32 @@ def extract_document_outline(doc_id: str, markdown_text: str) -> List[Dict[str, 
     return headings
 
 
+_CONV_PREFIX_RE = re.compile(
+    r"^\s*(?:can\s+you\s+|could\s+you\s+|please\s+|help\s+me\s+|i\s+need\s+to\s+|tell\s+me\s+about\s+|what\s+is\s+|how\s+do\s+i\s+)+",
+    re.IGNORECASE,
+)
+
+
+def rewrite_conversational_query(query: str) -> str:
+    """AGW-W12-11: Strips conversational filler prefixes before BM25F lexical scoring."""
+    cleaned = _CONV_PREFIX_RE.sub("", (query or "").strip()).strip(" ?.!,:;")
+    return cleaned or (query or "").strip()
+
+
+def build_identity_header(doc: Dict[str, Any]) -> str:
+    """AGW-W12-11: Builds a self-describing `{Title} · {Type} · {Tags} — {Description}` header."""
+    title = str(doc.get("title") or doc.get("id") or "Untitled").strip()
+    dtype = str(doc.get("type") or "Concept").strip()
+    raw_tags = doc.get("tags") or []
+    tags_str = ", ".join(str(t) for t in raw_tags[:4]) if isinstance(raw_tags, list) else str(raw_tags)
+    desc = str(doc.get("description") or "").strip()[:140]
+    parts = [title, dtype]
+    if tags_str:
+        parts.append(tags_str)
+    head = " · ".join(parts)
+    return f"{head} — {desc}" if desc else head
+
+
 class PolyphonicRetriever:
     def __init__(self, rrf_k: int = 60, max_per_doc: int = 2, entity_sim_threshold: float = 0.85):
         self.rrf_k = rrf_k
@@ -156,6 +182,24 @@ class PolyphonicRetriever:
                 final_list.append(item)
         return final_list
 
+    def outline(self, corpus: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """AGW-W12-11: Returns structural type/tag facet counts and document outline metadata."""
+        types_counter: Counter = Counter()
+        tags_counter: Counter = Counter()
+        headings_total = 0
+        for d in corpus or []:
+            types_counter[str(d.get("type") or "Concept")] += 1
+            for t in (d.get("tags") or []):
+                tags_counter[str(t)] += 1
+            body = str(d.get("body") or d.get("text") or "")
+            headings_total += len(extract_document_outline(str(d.get("id") or "doc"), body))
+        return {
+            "total_documents": len(corpus or []),
+            "types": dict(types_counter),
+            "tags": dict(tags_counter),
+            "headings_count": headings_total,
+        }
+
     def retrieve(
         self,
         query: str,
@@ -163,7 +207,13 @@ class PolyphonicRetriever:
         kg_entities: Optional[List[Dict[str, Any]]] = None,
         top_k: int = 5,
     ) -> List[Dict[str, Any]]:
+        clean_query = rewrite_conversational_query(query)
         deduped = self.deduplicate_boilerplate(corpus)
-        bm25_ranked = self.score_bm25f_6field(query, deduped)
-        reranked = self.rerank_with_graph_rag(query, bm25_ranked, kg_entities=kg_entities)
-        return reranked[:top_k]
+        bm25_ranked = self.score_bm25f_6field(clean_query, deduped)
+        reranked = self.rerank_with_graph_rag(clean_query, bm25_ranked, kg_entities=kg_entities)
+        results = []
+        for item in reranked[:top_k]:
+            enriched = dict(item)
+            enriched["identity_header"] = build_identity_header(enriched)
+            results.append(enriched)
+        return results

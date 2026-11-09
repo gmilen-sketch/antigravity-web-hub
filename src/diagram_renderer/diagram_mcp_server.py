@@ -51,4 +51,4 @@ def process_markdown_diagrams(markdown_content: str, output_dir: str = "/tmp/dia
 
 
 if __name__ == "__main__":
-    mcp.run()
+    mcp.run(transport="stdio")

@@ -1,7 +1,23 @@
 {
   "name": "antigravity-enterprise-autonomy",
-  "version": "3.7.0",
-  "description": "14-Pillar Enterprise Autonomy Engine, Bitemporal Knowledge Graph (OKF v0.2), 20 PD-Q Skills, 5 Custom Subagents, 3 Lifecycle Hooks, and 8 FastMCP Servers for Antigravity 2.24+ & CLI 1.4+.",
+  "version": "3.9.0",
+  "category": "automation",
+  "description": "14-Pillar Clean-Room Enterprise Autonomy Engine, Bitemporal Knowledge Graph (OKF v0.2), 20 PD-Q Skills, 5 Native-Tool Subagents, 4 Deterministic Lifecycle Hooks (PreInvocation HookSystemMessage + PostInvocation UX Holdback + Sentinel force_ask/GOLDFISH-RO-1 + v4.18 Multi-Goldfish Stop Gate), and 8 FastMCP Servers for Antigravity Core 2.29.1+ & CLI 1.5.3+.",
+  "author": {
+    "name": "Google Cloud Open-Source Contributors"
+  },
+  "license": "MIT",
+  "repository": "https://example.com/antigravity-web-hub",
+  "homepage": "https://example.com/antigravity-web-hub#readme",
+  "keywords": [
+    "antigravity",
+    "autonomy-engine",
+    "knowledge-graph",
+    "mcp",
+    "hooks",
+    "vertex-ai",
+    "gemini-4"
+  ],
   "skills": "skills",
   "agents": "agents",
   "rules": "rules",

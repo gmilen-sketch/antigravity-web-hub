@@ -1,7 +1,7 @@
 # 🚀 Google Antigravity Web: Architecture, Optimizations & Presentation Handover
 
 **Version:** 3.1.1 (Production & Clean-Room Verified)  
-**Author:** Milen Genchev (`maintainer@example-enterprise.com`)  
+**Maintainers:** Open-Source Cloud Architecture Maintainers (`maintainer@example-enterprise.com`)  
 **Target Audience:** Cloud Engineers, Technical Architects, Customer Engineering Leadership, Open-Source Community  
 **Date:** August 2026  
 
@@ -17,7 +17,7 @@ Running a desktop Electron IDE natively in the cloud revealed major architectura
 1. **Desktop Host Security Gates**: Upstream Go Language Server strictly rejected any non-localhost HTTP Host headers with `401 Unauthorized`.
 2. **Protocol & Routing Incompatibilities**: Browser Connect-RPC/gRPC-Web framing collided with Vertex AI streaming endpoints and triggered CORS preflight rejections.
 3. **Onboarding & React State Deadlocks**: Desktop onboarding state machines caused blank white screens (`<div id="root"></div>`) without local Electron IPC storage.
-4. **Dynamic Model Routing & Marketplace Entitlements**: Need for seamless switching between Gemini 3.7/3.6 and Anthropic Claude models without crashing when specific project marketplace licenses were absent.
+4. **Dynamic Model Routing & Marketplace Entitlements**: Need for seamless switching between Gemini 4 / 3.8 / 3.6 / 3.5 Flash and Anthropic Claude models without crashing when specific project marketplace licenses were absent.
 5. **Render Latency & Cold Starts**: Standard compute VMs caused high Time-To-Initial-Render (TTIR > 6.8s) during AST indexing and Monaco editor mounting.
 
 ---
@@ -94,14 +94,14 @@ Running a desktop Electron IDE natively in the cloud revealed major architectura
   * Attempting to call Anthropic Claude on GCP projects without marketplace enablement crashed the conversation with HTTP 404.
 * **The Solution**:
   * **Multi-Model Catalog**: Exposed 6 canonical production models in the dropdown:
-    1. **Gemini 3.7 Flash** (`352`, *Recommended Default*)
-    2. **Gemini 3.6 Flash** (`MODEL_GOOGLE_GEMINI_2_5_FLASH`, *General Production*)
-    3. **Gemini 3.5 Flash Lite** (`MODEL_GOOGLE_GEMINI_2_5_FLASH_LITE`, *High Throughput*)
-    4. **Claude 3.7 Sonnet** (`MODEL_ANTHROPIC_CLAUDE_3_5_SONNET`, *Complex Reasoning*)
-    5. **Claude Opus 5** (`MODEL_ANTHROPIC_CLAUDE_OPUS_4_5`, *Deep Reasoning*)
-    6. **Claude Fable 5** (`MODEL_ANTHROPIC_CLAUDE_3_5_HAIKU`, *Low-Latency Partner*)
+    1. **Gemini 3.5 Flash** (`352`, *Recommended Default*)
+    2. **Gemini 3.6 Flash** (`348`, *General Production*)
+    3. **Gemini 3.5 Flash Lite** (`330`, *High Throughput*)
+    4. **Claude Sonnet 5.5 (Vertex AI)** (`333`, *Balanced Coding*)
+    5. **Claude Opus 5.5 (Vertex AI)** (`290`, *Deep Reasoning*)
+    6. **Claude Fable 5 (Next-Gen)** (`340`, *Low-Latency Partner*)
   * **Model Lock-In Fix**: Omitted `defaultOverrideModelConfig` from configuration payloads and injected client DOM click listeners in `bootstrap.js` with `localStorage` persistence, ensuring model selections persist across turns.
-  * **Anthropic 404 Automatic Failover**: Integrated exception handling in `src/ccpa_mock.py` that intercepts Anthropic marketplace 404s and **seamlessly falls back to `gemini-3.7-flash`**, continuing token streaming without throwing broken pipe errors.
+  * **Anthropic 404 Automatic Failover**: Integrated exception handling in `src/ccpa_mock.py` that intercepts Anthropic marketplace 404s and **seamlessly falls back to `gemini-3.8-flash`**, continuing token streaming without throwing broken pipe errors.
 
 ---
 

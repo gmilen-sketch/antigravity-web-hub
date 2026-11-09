@@ -57,19 +57,20 @@ mkdir -p "$BIN_DIR" /opt/antigravity/bin "$RUN_HOME/.gemini/config" "$RUN_HOME/.
 chown -R "$RUN_USER:$RUN_USER" "$RUN_HOME/.gemini" "$RUN_HOME/.agents" "$RUN_HOME/enterprise-workspace" "$RUN_HOME/workspace" /mnt/data/projects 2>/dev/null || true
 
 # Dynamically discover the latest official Antigravity 2.0 Hub release from Google Auto-Updater API
-DEFAULT_AGY_HUB_VERSION="2.24.0"
-DEFAULT_AGY_HUB_EXEC_ID="5780333019398144"
-DEFAULT_AGY_CLI_VERSION="1.4.0"
-DEFAULT_AGY_CLI_EXEC_ID="5281842794987520"
+DEFAULT_AGY_HUB_VERSION="2.29.1"
+DEFAULT_AGY_HUB_EXEC_ID="5241471524274176"
+DEFAULT_AGY_CLI_VERSION="1.5.3"
+DEFAULT_AGY_CLI_EXEC_ID="6604829099950080"
 
 ANTIGRAVITY_RELEASES_MANIFEST_URL="${ANTIGRAVITY_RELEASES_MANIFEST_URL:-https://antigravity-hub-auto-updater-974169037036.us-central1.run.app/releases}"
 AGY_RELEASES_JSON=$(curl -sS --max-time 8 "$ANTIGRAVITY_RELEASES_MANIFEST_URL" 2>/dev/null || true)
-RESOLVED_HUB=$(AGY_JSON="$AGY_RELEASES_JSON" python3 -c '
+RESOLVED_HUB=$(AGY_JSON="$AGY_RELEASES_JSON" python3 -B -c '
 import json, os
 try:
     data = json.loads(os.environ.get("AGY_JSON", "") or "[]")
-    if isinstance(data, list) and data and data[0].get("version") and data[0].get("execution_id"):
-        print(f"{data[0][\"version\"]}|{data[0][\"execution_id\"]}")
+    item = data[0] if isinstance(data, list) and data else ((data.get("releases") or [None])[-1] if isinstance(data, dict) else None)
+    if isinstance(item, dict) and item.get("version") and item.get("execution_id"):
+        print(f"{item[\"version\"]}|{item[\"execution_id\"]}")
 except Exception:
     pass
 ' 2>/dev/null || true)
@@ -87,11 +88,19 @@ AGY_CLI_EXEC_ID="${ANTIGRAVITY_CLI_EXEC_ID:-}"
 if [ -z "$AGY_CLI_VERSION" ] || [ -z "$AGY_CLI_EXEC_ID" ]; then
     CLI_RELEASE_JSON=$(curl -fsSL --max-time 10 "https://antigravity-cli-auto-updater-974169037036.us-central1.run.app/releases" 2>/dev/null || true)
     if [ -n "$CLI_RELEASE_JSON" ]; then
-        RESOLVED_CLI_VER=$(python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); r=d.get("releases",[]); print(r[-1].get("version","") if r else "")' <<< "$CLI_RELEASE_JSON" 2>/dev/null || true)
-        RESOLVED_CLI_EID=$(python3 -c 'import json,sys; d=json.loads(sys.stdin.read()); r=d.get("releases",[]); print(r[-1].get("execution_id","") if r else "")' <<< "$CLI_RELEASE_JSON" 2>/dev/null || true)
-        if [ -n "$RESOLVED_CLI_VER" ] && [ -n "$RESOLVED_CLI_EID" ]; then
-            AGY_CLI_VERSION="$RESOLVED_CLI_VER"
-            AGY_CLI_EXEC_ID="$RESOLVED_CLI_EID"
+        RESOLVED_CLI=$(AGY_CLI_JSON="$CLI_RELEASE_JSON" python3 -B -c '
+import json, os
+try:
+    d = json.loads(os.environ.get("AGY_CLI_JSON", "") or "[]")
+    item = d[0] if isinstance(d, list) and d else ((d.get("releases") or [None])[-1] if isinstance(d, dict) else None)
+    if isinstance(item, dict) and item.get("version") and item.get("execution_id"):
+        print(f"{item[\"version\"]}|{item[\"execution_id\"]}")
+except Exception:
+    pass
+' 2>/dev/null || true)
+        if [ -n "$RESOLVED_CLI" ]; then
+            AGY_CLI_VERSION="${RESOLVED_CLI%%|*}"
+            AGY_CLI_EXEC_ID="${RESOLVED_CLI##*|}"
         fi
     fi
 fi
@@ -188,7 +197,7 @@ if os.path.isfile(cli_path):
         pass
 
 manifest = {
-    "hub_version": "3.7.0",
+    "hub_version": "3.9.0",
     "antigravity_core_version": "$AGY_HUB_VERSION",
     "antigravity_execution_id": "$AGY_HUB_EXEC_ID",
     "antigravity_cli_version": cli_ver or "$AGY_CLI_VERSION",
@@ -228,6 +237,7 @@ install -o "$RUN_USER" -g "$RUN_USER" -m 0755 src/mcp_deep_research.py "$BIN_DIR
 install -o "$RUN_USER" -g "$RUN_USER" -m 0755 config/start_hub.sh      "$BIN_DIR/start_hub.sh"
 
 # Install Knowledge Graph Long-Term Memory module files
+rm -f /dev/shm/kg_warm_cache.json /dev/shm/intraday_lessons.jsonl /dev/shm/agw_intraday_lessons.jsonl 2>/dev/null || true
 if [ -d "src/knowledge_graph" ]; then
   echo "Installing Knowledge Graph Long-Term Memory module..."
   mkdir -p "$BIN_DIR/knowledge_graph"
@@ -262,7 +272,9 @@ if [ -d "kb" ]; then
   cp -r kb/* "$RUN_HOME/kb/"
   cp -r kb/* "$BIN_DIR/kb/"
   chown -R "$RUN_USER:$RUN_USER" "$RUN_HOME/kb" "$BIN_DIR/kb"
-  sudo -u "$RUN_USER" python3 "$BIN_DIR/knowledge_graph/okf_knowledge_compiler.py" --kb-root "$RUN_HOME/kb" || true
+  if [ "${AGW_EMPTY_KG:-0}" != "1" ]; then
+    sudo -u "$RUN_USER" python3 "$BIN_DIR/knowledge_graph/okf_knowledge_compiler.py" --kb-root "$RUN_HOME/kb" || true
+  fi
 fi
 
 if [ -d "src/diagram_renderer" ]; then
@@ -342,32 +354,45 @@ hooks_cfg = {
     'PreInvocation': [
       {
         'type': 'command',
-        'command': f'python3 {bin_dir}/hooks/kg_pre_invocation_hook.py',
-        'timeout': 5
+        'command': f'bash {bin_dir}/hooks/run_hook_safe.sh {bin_dir}/hooks/kg_pre_invocation_hook.py',
+        'timeout': 15
       }
     ]
   },
-  'sentinel-pre-tool-gate': {
+  'sentinel-policy-guard': {
     'enabled': True,
     'PreToolUse': [
       {
-        'type': 'command',
-        'command': f'python3 {bin_dir}/hooks/sentinel_dispatch.py',
-        'timeout': 5
+        'matcher': '.*',
+        'hooks': [
+          {
+            'type': 'command',
+            'command': f'bash {bin_dir}/hooks/run_hook_safe.sh {bin_dir}/hooks/sentinel_dispatch.py',
+            'timeout': 15
+          }
+        ]
       }
     ]
   },
   'black-hat-completion-gate': {
     'enabled': True,
+    'PostInvocation': [
+      {
+        'type': 'command',
+        'command': f'bash {bin_dir}/hooks/run_hook_safe.sh {bin_dir}/hooks/black_hat_in_progress_ux_hook.py',
+        'timeout': 10
+      }
+    ],
     'Stop': [
       {
         'type': 'command',
-        'command': f'python3 {bin_dir}/hooks/agent_stop_black_hat_gate.py',
+        'command': f'bash {bin_dir}/hooks/run_hook_safe.sh {bin_dir}/hooks/agent_stop_black_hat_gate.py',
         'timeout': 15
       }
     ]
   }
 }
+os.chmod(f'{bin_dir}/hooks/run_hook_safe.sh', 0o755)
 
 paths = [
   f'{home}/.gemini/config/mcp_config.json',
@@ -437,14 +462,115 @@ if [ -d "agents" ]; then
         mkdir -p "$(dirname "$dest")"
         rm -rf "$dest"
         cp -r "$agent_path" "$dest"
+        if [ -f "$dest/hooks.json" ]; then
+          sed -i "s|../../src/hooks/run_hook_safe.sh|$BIN_DIR/hooks/run_hook_safe.sh|g" "$dest/hooks.json"
+        fi
         chown -R "$RUN_USER:$RUN_USER" "$dest" 2>/dev/null || true
       done
     fi
   done
 fi
 
-# ---- 6. Bypass Onboarding Screen with antigravity_state.pbtxt (Preserve Existing State) ----
-echo "Checking onboarding state..."
+if [ -d "rules" ]; then
+  echo "Installing Enterprise Workspace Rules (AGENTS.md, GEMINI.md, no-bullshit.md)..."
+  for rule_dir in "$RUN_HOME/.gemini/config/rules" \
+                  "$RUN_HOME/.gemini/antigravity/rules" \
+                  "$RUN_HOME/.agents/rules" \
+                  "/mnt/data/projects/.agents/rules"; do
+    mkdir -p "$rule_dir"
+    cp -f rules/*.md "$rule_dir/"
+    chown -R "$RUN_USER:$RUN_USER" "$rule_dir" 2>/dev/null || true
+  done
+  mkdir -p /mnt/data/projects
+  for root_rule in AGENTS.md GEMINI.md; do
+    if [ -f "rules/$root_rule" ]; then
+      cp -f "rules/$root_rule" "/mnt/data/projects/$root_rule"
+      chown "$RUN_USER:$RUN_USER" "/mnt/data/projects/$root_rule" 2>/dev/null || true
+    fi
+  done
+fi
+
+if [ -f "plugin.json" ]; then
+  echo "Installing Unified Plugin Bundle (antigravity-enterprise-autonomy v3.9.0)..."
+  for plugin_dest in "$RUN_HOME/.gemini/config/plugins/antigravity-enterprise-autonomy" \
+                     "$RUN_HOME/.gemini/antigravity/plugins/antigravity-enterprise-autonomy" \
+                     "/mnt/data/projects/.agents/plugins/antigravity-enterprise-autonomy"; do
+    rm -rf "$plugin_dest"
+    mkdir -p "$plugin_dest/.antigravity-plugin"
+    cp -f plugin.json "$plugin_dest/plugin.json"
+    cp -f plugin.json "$plugin_dest/.antigravity-plugin/plugin.json"
+    [ -d "rules" ] && cp -r rules "$plugin_dest/rules"
+    [ -d "skills" ] && cp -r skills "$plugin_dest/skills"
+    if [ -d "agents" ]; then
+      cp -r agents "$plugin_dest/agents"
+      for p_hook in "$plugin_dest/agents/"*/hooks.json; do
+        [ -f "$p_hook" ] && sed -i "s|../../src/hooks/run_hook_safe.sh|$BIN_DIR/hooks/run_hook_safe.sh|g" "$p_hook"
+      done
+    fi
+    [ -f "$RUN_HOME/.gemini/config/hooks.json" ] && cp -f "$RUN_HOME/.gemini/config/hooks.json" "$plugin_dest/hooks.json"
+    rm -f "$plugin_dest/mcp_config.json" 2>/dev/null || true
+    chown -R "$RUN_USER:$RUN_USER" "$plugin_dest" 2>/dev/null || true
+  done
+  RUN_HOME="$RUN_HOME" python3 - << 'PYEOF'
+import json
+import os
+
+home = os.environ.get('RUN_HOME', '')
+cfg_path = os.path.join(home, '.gemini', 'config', 'config.json')
+os.makedirs(os.path.dirname(cfg_path), exist_ok=True)
+cfg = {}
+if os.path.exists(cfg_path):
+    try:
+        with open(cfg_path, 'r', encoding='utf-8') as f:
+            cfg = json.load(f)
+    except Exception:
+        cfg = {}
+plugins_map = cfg.get('plugins')
+if not isinstance(plugins_map, dict):
+    plugins_map = {}
+plugins_map['antigravity-enterprise-autonomy'] = {'enabled': True}
+cfg['plugins'] = plugins_map
+cfg['permissionPreset'] = 'AGENT_PERMISSION_PRESET_TURBO'
+cfg['autoExecutionPolicy'] = 'CASCADE_COMMANDS_AUTO_EXECUTION_AUTO'
+cfg['enableTerminalSandbox'] = False
+cfg['nonWorkspaceFileAccessPolicy'] = 'AGENT_SETTING_POLICY_ALLOW'
+allow_rules = [
+    'command(*)',
+    'execute_url(*)',
+    'mcp(*)',
+    'read_file(*)',
+    'read_url(*)',
+    'unsandboxed(*)',
+    'write_file(*)',
+]
+cfg['allow'] = allow_rules
+user_settings = cfg.get('userSettings')
+if not isinstance(user_settings, dict):
+    user_settings = {}
+user_settings['artifactReviewMode'] = 'ARTIFACT_REVIEW_MODE_TURBO'
+user_settings['autoExecutionPolicy'] = 'CASCADE_COMMANDS_AUTO_EXECUTION_AUTO'
+user_settings['enableTerminalSandbox'] = False
+user_settings['nonWorkspaceFileAccessPolicy'] = 'AGENT_SETTING_POLICY_ALLOW'
+user_settings['permissionPreset'] = 'AGENT_PERMISSION_PRESET_TURBO'
+user_settings['globalPermissionGrants'] = {'allow': allow_rules}
+cfg['userSettings'] = user_settings
+for out_cfg in (
+    cfg_path,
+    os.path.join(home, '.gemini', 'antigravity', 'config.json'),
+):
+    os.makedirs(os.path.dirname(out_cfg), exist_ok=True)
+    with open(out_cfg, 'w', encoding='utf-8') as f:
+        json.dump(cfg, f, indent=2)
+PYEOF
+  chown "$RUN_USER:$RUN_USER" "$RUN_HOME/.gemini/config/config.json" "$RUN_HOME/.gemini/antigravity/config.json" 2>/dev/null || true
+fi
+mkdir -p "$RUN_HOME/.gemini/config"
+touch "$RUN_HOME/.gemini/config/.migrated"
+chown -R "$RUN_USER:$RUN_USER" "$RUN_HOME/.gemini" "$RUN_HOME/.agents" /mnt/data/projects 2>/dev/null || true
+sudo -u "$RUN_USER" env HOME="$RUN_HOME" GOOGLE_CLOUD_PROJECT="$PROJECT_ID" python3 "$BIN_DIR/ccpa_mock.py" --seed-oauth-token 2>/dev/null || true
+
+# ---- 6. Bypass Onboarding Screen with antigravity_state.pbtxt & Enforce Gemini 4 Argon (354) Default ----
+echo "Checking onboarding state and enforcing Gemini 4 Argon (354) default..."
 if [ -f "config/antigravity_state.pbtxt" ]; then
   if [ ! -f "$RUN_HOME/.gemini/antigravity/antigravity_state.pbtxt" ]; then
     cp config/antigravity_state.pbtxt "$RUN_HOME/.gemini/antigravity/antigravity_state.pbtxt"
@@ -454,6 +580,16 @@ if [ -f "config/antigravity_state.pbtxt" ]; then
     cp config/antigravity_state.pbtxt "$BIN_DIR/antigravity_state.pbtxt"
     chown "$RUN_USER:$RUN_USER" "$BIN_DIR/antigravity_state.pbtxt"
   fi
+  for pbtxt_file in "$RUN_HOME/.gemini/antigravity/"*_state.pbtxt "$BIN_DIR/antigravity_state.pbtxt"; do
+    if [ -f "$pbtxt_file" ]; then
+      if grep -q "last_selected_agent_model:" "$pbtxt_file"; then
+        sed -i 's/last_selected_agent_model:[[:space:]]*[A-Za-z0-9_]*/last_selected_agent_model: 354/g' "$pbtxt_file"
+      else
+        printf "\nlast_selected_agent_model: 354\n" >> "$pbtxt_file"
+      fi
+      chown "$RUN_USER:$RUN_USER" "$pbtxt_file" 2>/dev/null || true
+    fi
+  done
 fi
 
 # ---- 7. Configure Nginx Reverse Proxy ----

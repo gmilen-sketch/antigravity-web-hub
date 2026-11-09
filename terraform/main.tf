@@ -152,7 +152,12 @@ resource "google_compute_instance" "hub_vm" {
   tags = [var.name_prefix]
 
   service_account {
-    scopes = ["cloud-platform"]
+    scopes = [
+      "https://www.googleapis.com/auth/cloud-platform",
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/userinfo.profile",
+      "openid"
+    ]
   }
 
   metadata_startup_script = <<-EOF

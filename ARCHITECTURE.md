@@ -108,7 +108,7 @@ We depend only on the **publicly distributed** Antigravity CLI download. No Goog
 ## End-to-end request flow (typical Gemini or Claude turn)
 
 1. Browser requests pages or resources. Nginx bypasses onboarding natively by injecting `bootstrap.js` and `window.nativeStorage` into the HTML `<head>`.
-2. When the user loads the app, the browser requests `/exa.*GetUserStatus`. Nginx intercepts this request and proxies it to `ccpa_mock.py` on port `8083` to append the 8-model GA catalog (`Gemini 4 Argon`, `Gemini 3.8 Flash`, `Gemini 3.7 Flash`, `Gemini 3.6 Flash`, `Gemini 3.5 Flash Lite`, `Claude Opus 5.5 (Vertex AI)`, `Claude Sonnet 5.5 (Vertex AI)`, and `Claude Fable 5 (Next-Gen)`) to the client model configurations.
+2. When the user loads the app, the browser requests `/exa.*GetUserStatus`. Nginx intercepts this request and proxies it to `ccpa_mock.py` on port `8083` to append the 8-model GA catalog (`Gemini 4 Argon`, `Gemini 3.8 Flash`, `Gemini 3.5 Flash`, `Gemini 3.6 Flash`, `Gemini 3.5 Flash Lite`, `Claude Opus 5.5 (Vertex AI)`, `Claude Sonnet 5.5 (Vertex AI)`, and `Claude Fable 5 (Next-Gen)`) to the client model configurations.
 3. When the user starts a chat session, `/exa.*StartCascade` is intercepted by Nginx and routed to `ccpa_mock.py` on port `8083` to inject model details, matching what the Go backend expects.
 4. All high-throughput streaming RPCs (like `StreamAgentStateUpdates`) and generic traffic are routed **natively and directly** to the Go `language_server` on port `8081` with zero proxy hops or added latency.
 5. When executing model queries, `language_server` (having been configured with `--model_api_client_type=ccpa`) sends `/v1internal:streamGenerateContent` requests to the configured sidecar endpoint `http://127.0.0.1:8083`.

@@ -4,6 +4,7 @@ export CHROMIUM_FLAGS="--no-sandbox --disable-dev-shm-usage --disable-gpu --head
 
 # Force Go to use cgo system resolver to prevent local loopback resolution failures on GCE VM network configurations
 export GODEBUG=netdns=cgo
+export DBUS_SESSION_BUS_ADDRESS=""
 export AGY_CLI_AUTO_COMPACT_OVERRIDE="${AGY_CLI_AUTO_COMPACT_OVERRIDE:-80%}"
 export JJ_PAGER="${JJ_PAGER:-cat}"
 
@@ -22,6 +23,23 @@ export GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT}"
 CSRF_TOKEN="${CSRF_TOKEN:-antigravity_secret_csrf_token_12345}"
 export CSRF_TOKEN
 export ANTIGRAVITY_PROJECT_ID="${GOOGLE_CLOUD_PROJECT}"
+
+# If GOOGLE_APPLICATION_CREDENTIALS points to a placeholder/missing file, unset so GCE VM Metadata ADC works natively
+if [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ] && [ ! -f "${GOOGLE_APPLICATION_CREDENTIALS}" ]; then
+    unset GOOGLE_APPLICATION_CREDENTIALS
+fi
+
+# Enable native Hub Mode ADC login & route all LLM Gateway / AI Code traffic through local Vertex AI Gateway (:8083)
+export AGY_ADC_AUTH="${AGY_ADC_AUTH:-true}"
+export AGY_LLM_GATEWAY_URL="${AGY_LLM_GATEWAY_URL:-http://127.0.0.1:8083}"
+export AICODE_ENDPOINT_URL="${AICODE_ENDPOINT_URL:-http://127.0.0.1:8083}"
+export CLOUD_CODE_URL="${CLOUD_CODE_URL:-http://127.0.0.1:8083}"
+export SSH_CONNECTION="${SSH_CONNECTION:-127.0.0.1 1 127.0.0.1 22}"
+
+# Ensure plugin directories do not duplicate top-level mcp_config.json (keeps MCP tool names <= 64 chars)
+rm -f "$HOME/.gemini/config/plugins/antigravity-enterprise-autonomy/mcp_config.json" \
+      "$HOME/.gemini/antigravity/plugins/antigravity-enterprise-autonomy/mcp_config.json" \
+      "/mnt/data/projects/.agents/plugins/antigravity-enterprise-autonomy/mcp_config.json" 2>/dev/null || true
 
 BIN_DIR="$HOME/.gemini/antigravity/bin"
 
@@ -67,7 +85,10 @@ killall -9 language_server webm_encoder 2>/dev/null || true
 fuser -k 8081/tcp 8083/tcp 2>/dev/null || true
 sleep 1
 
-# Start the mock CCPA server to bypass Vertex AI Model Gateway blockers
+# Seed standalone file-backed OAuth token before starting Vertex AI Model Gateway & language_server
+python3 "$BIN_DIR/ccpa_mock.py" --seed-oauth-token 2>/dev/null || true
+
+# Start the Vertex AI Model Gateway Sidecar
 echo "Starting Vertex AI Model Gateway Sidecar..."
 python3 "$BIN_DIR/ccpa_mock.py" > /tmp/ccpa_mock.log 2>&1 &
 MOCK_PID=$!
@@ -76,11 +97,11 @@ MOCK_PID=$!
 sleep 2
 
 # Run the Antigravity 2.0 language server with explicit version metadata & supported flags
-echo "Starting Antigravity 2.0 language_server (${ANTIGRAVITY_VERSION:-2.22.0}) natively..."
+echo "Starting Antigravity 2.0 language_server (${ANTIGRAVITY_VERSION:-2.29.1}) natively..."
 "$BIN_DIR/language_server" \
     --subclient_type=hub \
     --override_ide_name="antigravity" \
-    --override_ide_version="${ANTIGRAVITY_VERSION:-2.24.0}" \
+    --override_ide_version="${ANTIGRAVITY_VERSION:-2.29.1}" \
     --http_server_port=8081 \
     --model_api_client_type=ccpa \
     --cloud_code_endpoint="http://127.0.0.1:8083" \
@@ -88,6 +109,7 @@ echo "Starting Antigravity 2.0 language_server (${ANTIGRAVITY_VERSION:-2.22.0}) 
     --override_oauth_client_id="${OAUTH_CLIENT_ID}" \
     --override_oauth_client_secret="${OAUTH_CLIENT_SECRET}" \
     -csrf_token="${CSRF_TOKEN}" \
+    -disable_telemetry=true \
     --local_chrome_headless=true \
     --local_chrome_user_data_dir="$LS_CHROME_DIR" \
     --app_data_dir="antigravity" \

@@ -51,7 +51,7 @@ log = logging.getLogger("mcp_deep_research")
 
 # --- Config -----------------------------------------------------------------
 PROJECT = os.environ.get("GOOGLE_CLOUD_PROJECT", "my-enterprise-gcp-project")
-VERTEX_MODEL = os.environ.get("MCP_VERTEX_MODEL", "claude-opus-4-8")
+VERTEX_MODEL = os.environ.get("MCP_VERTEX_MODEL", "claude-opus-5-5")
 VERTEX_REGION = os.environ.get("MCP_VERTEX_REGION", "global")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
@@ -305,7 +305,7 @@ async def _call_claude(messages: list, max_tokens: int, timeout_s: float = 180.0
             "Content-Type": "application/json",
         }
     elif ANTHROPIC_API_KEY:
-        body["model"] = VERTEX_MODEL.replace("claude-opus-4-8", "claude-opus-4-8")  # keep as-is
+        body["model"] = VERTEX_MODEL
         url = "https://api.anthropic.com/v1/messages"
         hdrs = {
             "x-api-key": ANTHROPIC_API_KEY,

@@ -30,7 +30,7 @@ seen_nuxs:  {
   uids:  22
   uids:  23
 }
-last_selected_agent_model:  352
+last_selected_agent_model:  354
 migrate_convos_into_projects:  MIGRATION_STATUS_COMPLETED
 installation_uuid:  "257c32c1-fc1f-4382-b186-07d1ea12c9de"
 migrate_retroactive_projects:  RETROACTIVE_MIGRATION_STATUS_COMPLETED_UNNECESSARY

@@ -61,14 +61,13 @@ gcloud --project=$GOOGLE_CLOUD_PROJECT compute instances create $VM_NAME \
   --boot-disk-size=20GB --boot-disk-type=$DISK_TYPE \
   --create-disk="name=${VM_NAME}-data,size=${DATA_DISK_GB}GB,type=$DISK_TYPE,auto-delete=no" \
   --tags=${NAME_PREFIX} \
-  --scopes=cloud-platform \
+  --scopes=https://www.googleapis.com/auth/cloud-platform,https://www.googleapis.com/auth/userinfo.email,https://www.googleapis.com/auth/userinfo.profile,openid \
   --metadata=enable-oslogin=TRUE \
   --shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring 2>/dev/null || true
 
-echo "→ Granting Vertex AI User role to Compute Engine default service account…"
-PROJECT_NUM=$(gcloud projects describe $GOOGLE_CLOUD_PROJECT --format='value(projectNumber)')
+PROJECT_NUM=$(gcloud projects describe $GOOGLE_CLOUD_PROJECT --format='value(projectNumber)' 2>/dev/null || echo "<PROJECT_NUMBER>")
 COMPUTE_SA="${PROJECT_NUM}-compute@developer.gserviceaccount.com"
-gcloud projects add-iam-policy-binding $GOOGLE_CLOUD_PROJECT --member="serviceAccount:${COMPUTE_SA}" --role="roles/aiplatform.user" --quiet 2>/dev/null || true
+echo "  Ensure ${COMPUTE_SA} holds roles/aiplatform.user and roles/bigquery.jobUser in ${GOOGLE_CLOUD_PROJECT}."
 
 echo "  VM created. Wait ~30s for boot, then:"
 echo "    gcloud compute ssh $VM_NAME --zone=$VM_ZONE --tunnel-through-iap"

@@ -495,13 +495,13 @@ def run_dreaming_pipeline(
 
 
 # ==============================================================================
-# v5.2+ Clean-Room Upgrades: Whistler 4-Axis Trajectory Backtracking & Memory
+# v5.2+ Clean-Room Upgrades: 4-Axis Trajectory Backtracking & Memory
 # Inversion (NEW-2), Incremental JSONL Byte-Offset Watermark (ENH-5) & Scrubbing
 # ==============================================================================
 
 def backtrack_trajectory_4axis(steps: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
-    NEW-2 Whistler 4-Axis Trajectory Backtracking:
+    NEW-2 4-Axis Trajectory Backtracking:
     Extracts causal repair pairs (Failed Tool Step -> Parameter/Path Fix -> Passing Retry)
     and synthesizes an inverted negative-constraint memory rule.
     """
@@ -530,6 +530,37 @@ def read_incremental_jsonl_watermark(file_path: str, last_offset: int = 0) -> Di
         chunk = f.read()
     lines = [ln for ln in chunk.decode("utf-8", errors="ignore").splitlines() if ln.strip()]
     return {"new_lines": lines, "new_offset": size}
+
+
+def verify_skill_patch_ttl_window(
+    patch_meta: Dict[str, Any],
+    current_score: float,
+    now_ts: Optional[float] = None,
+    ttl_days: float = 7.0,
+) -> Dict[str, Any]:
+    """
+    AGW-W12-10 (`DREAM-LIVE-TTL-1`): Verifies provisional skill/rule patches across a
+    7-day TTL window (`base_confidence` anchored) and auto-reverts patches with negative quality lift.
+    """
+    now = now_ts if now_ts is not None else time.time()
+    absorbed_ts = float(patch_meta.get("absorbed_epoch", now))
+    baseline_score = float(patch_meta.get("baseline_score", 85.0))
+    base_conf = float(patch_meta.get("base_confidence", patch_meta.get("confidence", 0.90)))
+    elapsed_days = max(0.0, (now - absorbed_ts) / 86400.0)
+    delta_score = round(current_score - baseline_score, 4)
+
+    if elapsed_days < ttl_days:
+        disposition = "PROVISIONAL_TTL_ACTIVE" if delta_score >= -2.0 else "REVERT_NEGATIVE_LIFT"
+    else:
+        disposition = "GRADUATED_PERMANENT" if delta_score >= 0.0 else "REVERT_NEGATIVE_LIFT"
+
+    return {
+        "disposition": disposition,
+        "elapsed_days": round(elapsed_days, 2),
+        "delta_score": delta_score,
+        "base_confidence": base_conf,
+        "keep_active": disposition != "REVERT_NEGATIVE_LIFT",
+    }
 
 
 if __name__ == "__main__":

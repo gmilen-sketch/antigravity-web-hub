@@ -11,7 +11,10 @@ import tempfile
 import time
 from typing import Any, Dict, List
 
-WARM_CACHE_PATH = "/dev/shm/kg_warm_cache.json" if os.path.exists("/dev/shm") else "/tmp/kg_warm_cache.json"
+WARM_CACHE_PATH = os.environ.get(
+    "KG_WARM_CACHE_PATH",
+    "/dev/shm/agw_kg_warm_cache.json" if os.path.exists("/dev/shm") else "/tmp/agw_kg_warm_cache.json",
+)
 STEER_SERVING_CONFIDENCE_FLOOR = 0.15
 
 

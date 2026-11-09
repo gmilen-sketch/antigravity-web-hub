@@ -1,5 +1,26 @@
 # Changelog
 
+## [3.9.0] - 2026-11-10 — 🚀 Core 2.29.1 + CLI 1.5.3, 100% Zero-Mock Native `:8081` Execution, 4-Hook Autonomy Suite (`v4.18` Adaptive Goldfish Wave + `PostInvocation` UX) & Clean-Room Certification
+
+### 🚀 Platform, Native `:8081` Execution & Model Catalog Upgrades (`A1`, `A2`)
+- **100% Zero-Mock Native `:8081` Execution, Headless OAuth Seeding & Anthropic/Gemini Tool Translation (`src/bootstrap.js`, `src/ccpa_mock.py`, `src/mcp_servers/cloud_telemetry_mcp.py`, `src/hooks/agent_stop_black_hat_gate.py`, `config/nginx.conf`, `scripts/install.sh`)**: Shrunk `src/bootstrap.js` (`1,646 -> 390` lines) to pure Electron/storage polyfills + 8-model selector sync (`0` fake sessions, `0` synthetic footers, `0` cascade RPC interceptors); added `--seed-oauth-token` via `/oauth-token-callback` (`127.0.0.1:8081`) + unattended `globalPermissionGrants`; mapped gateway `MODEL_PLACEHOLDER_M36`/`M18`/`M50` to the active UI model; added bidirectional Anthropic `tools`/`tool_use`/`tool_result` <-> Gemini `functionDeclarations`/`functionCall`/`functionResponse` unary + SSE translation and `normalize_gemini_tool_calls()` JSON-stringified `Arguments` unwrapping; added eager REST BigQuery `discover_billing_export_tables` & `query_bigquery_billing` in `cloud_telemetry_mcp.py`; and hardened `is_mutating_mcp()` across multi-underscore server names (`40/40` unit tests passing).
+- **Antigravity Core `2.29.1` & Companion CLI `1.5.3` Default Upgrade (`scripts/install.sh`, `config/start_hub.sh`, `src/ccpa_mock.py`, `src/bootstrap.js`)**: Upgraded default Hub core to `2.29.1` (`execution_id: 5241471524274176`) and standalone CLI to `1.5.3` (`execution_id: 6604829099950080`) with dual-shape (`list` + `dict`) release feed parsers, `classify_cli_exit_code(3) == "PRINT_TIMEOUT"`, and loopback-first gateway binding (`AGW_BIND_HOST=127.0.0.1`).
+- **`HookSystemMessage` Schema & Native File Tool Migration (`src/hooks/`, `agents/*/agent.md`)**: Upgraded `PreInvocation` output contract to `{"injectSteps": [{"systemMessage": {"systemMessage": "..."}}]}` (backward-normalizing legacy `ephemeralMessage`), migrated all `5/5` subagents and hook guards to native `read_file` / `write_file` / `edit_file` tools, and enriched `plugin.json` & `.antigravity-plugin/plugin.json` with `category: "automation"` marketplace metadata.
+- **`Gemini 3.5 Flash` GA Slot (`enum 350`) & `131,072` Output Token Ceiling**: Replaced the retired mid-tier 3.x Flash slot on enum `350` with GA **`Gemini 3.5 Flash`** (`gemini-3.5-flash`, `65,535` max output tokens), raised `fetchAvailableModels` max output caps to `131,072` (Gemini 4 / 3.8 / 3.6) and `16,384` (Claude 5.5 + live `/api/autonomy/invoke` default), and expanded the Foundational Reference KG to **18 clean-room nodes and 32 edges**.
+
+### 🛡️ Security Hardening, Adaptive `v4.18` Verification & SWE Polish (`A3`, `A4`, `B1`, `B2`, `B3`)
+- **`force_ask` Interactive Security Mediation, Subagent Hook Inheritance & `GOLDFISH-RO-1` (`src/hooks/rules/`, `src/hooks/sentinel_dispatch.py`, `agents/*/hooks.json`, `src/hooks/run_hook_safe.sh`)**: Upgraded `destructive_commands.py` (including `bq rm`, `gcloud delete`, `kubectl delete`, `terraform destroy`, while exempting `/tmp/` & `/dev/shm/` scratch dirs) and `r31_hook_integrity_guard.py` to return `decision: "force_ask"`; wired `agents/<name>/hooks.json` across all 5 subagents via zero-`.pyc` `run_hook_safe.sh`; scoped `S-01` `overwrite` strictly to `_FILE_SCHEMA_TOOLS`; and enforced mechanical `GOLDFISH-RO-1` read-only sandboxing (`/dev/shm/gf_<cid>` scratch only, heredoc-safe `strip_heredoc_and_quoted_literals`, plus `Stop` `C3b` transcript mutation audit).
+- **Adaptive `v4.18` `K=1..3` `[SHARD:<id>]` Multi-Goldfish Wave, Per-Turn `/dev/shm` Hook Cache & `6-Block Owl DAG` (`src/hooks/agent_stop_black_hat_gate.py`, `src/hooks/kg_pre_invocation_hook.py`, `rules/AGENTS.md`)**: Added parallel shard wave resolution (`flat_sub_idx`), selective `[SHARD:<id>]` delta retry, `C6-Multi` / `C6-Holistic` union + deliverable seam checks, `C10b` `min_wave_idx` post-wave mutation detection, `/dev/shm/agw_turn_cache_<cid>.json` intra-turn `PreInvocation` memoization, `/dev/shm/<task_dir>` SWE routing (`min_stop_seconds: 3`), XDG noise stripping, `L3` identical-command anti-spin breaker, and `G2`/`G3`/`G5` Stop-Gate precision fixes.
+- **Zero-Token `PostInvocation` In-Progress UX Banner (`src/hooks/black_hat_in_progress_ux_hook.py`) & Clean-Room IP Scanner (`src/hooks/black_hat_analyzer.py`)**: Added 4th hook event emitting transient UI `[!WARNING]` verification progress banners (`0` LLM prompt tokens) with atomic `<artifact>.metadata.json` `userFacing` holdback/restore; scrubbed all external playbook emails/links (`ENTERPRISE_TRIAL_POC_PLAYBOOK.md`) and expanded `black_hat_analyzer.py` SHA-256 digests + corporate domain/shortlink/binary guards with zero skip-list loopholes.
+
+---
+
+## [3.8.0] - 2026-10-21 — 🧠 Foundational Self-Documentation KG, 14 Wave-12 Dual-Mode Kernels & Paired A/B Benchmark Runner
+
+- Added Foundational Reference KG (`src/knowledge_graph/init_knowledge_graph.py` & 5 `OKF v0.2` `kb/` dossiers) with `/dev/shm/agw_kg_warm_cache.json` namespace isolation (`--empty` / `AGW_EMPTY_KG=1` null control), 14 Wave-12 clean-room runtime kernels (`AGW-W12-01`..`14`), and turnkey paired A/B benchmark runner (`scripts/run_ab_benchmark.py`).
+
+---
+
 ## [3.7.0] - 2026-10-16
 
 ### Added & Upgraded (Antigravity 2.24.0 Hub + CLI 1.4.0 + Latest Platform Features)
@@ -16,7 +37,7 @@ All notable changes to the **Antigravity Web Hub** project will be documented in
 
 ### 🚀 Main Landing Page & 8-Model GA Roster Alignment
 - **Complete Main Page (`README.md`) & Documentation Refresh (`ARCHITECTURE.md`, ` docs/request-flow.md`, `docs/mcp.md`, `.env.example`)**:
-  - Updated the main repository landing page (`README.md`) and technical documentation to showcase the complete **8-Model GA Roster**: **Gemini 4 Argon (`gemini-4-argon`, enum `354`, 1M context, `global`/`us`/`eu` mREP)**, **Gemini 3.8 Flash (`gemini-3.8-flash`, enum `352`)**, **Gemini 3.7 Flash (`gemini-3.7-flash`, enum `350`)**, **Gemini 3.6 Flash (`gemini-3.6-flash`, enum `348`)**, **Gemini 3.5 Flash Lite (`gemini-3.5-flash-lite`, enum `330`)**, **Claude Opus 5.5 (Vertex AI) (`claude-opus-5-5`, enum `290`)**, **Claude Sonnet 5.5 (Vertex AI) (`claude-sonnet-5-5`, enum `333`)**, and **Claude Fable 5 (Next-Gen) (`claude-fable-5`, enum `340`)**.
+  - Updated the main repository landing page (`README.md`) and technical documentation to showcase the complete **8-Model GA Roster**: **Gemini 4 Argon (`gemini-4-argon`, enum `354`, 1M context, `global`/`us`/`eu` mREP)**, **Gemini 3.8 Flash (`gemini-3.8-flash`, enum `352`)**, **Gemini 3.5 Flash (`gemini-3.5-flash`, enum `350`)**, **Gemini 3.6 Flash (`gemini-3.6-flash`, enum `348`)**, **Gemini 3.5 Flash Lite (`gemini-3.5-flash-lite`, enum `330`)**, **Claude Opus 5.5 (Vertex AI) (`claude-opus-5-5`, enum `290`)**, **Claude Sonnet 5.5 (Vertex AI) (`claude-sonnet-5-5`, enum `333`)**, and **Claude Fable 5 (Next-Gen) (`claude-fable-5`, enum `340`)**.
   - Documented the **Persistent Cross-Browser Multi-Model Sidebar Sessions (`/api/sessions` & `JetboxSubscribeToState` hydration)**, the **Antigravity 2.0 Core Engine (`v2.22.0` Hub + `v1.3.3` CLI + `webm_encoder` + `chrome-devtools-mcp`)**, the **14 Clean-Room Autonomy Pillars**, **20 `PD-Q` Skills**, **8 FastMCP Servers**, **3 Lifecycle Hooks**, and **5 Custom Subagents**.
 - **Anthropic Claude 5.5 GA UI & Gateway Alignment (`src/bootstrap.js`, `src/ccpa_mock.py`, `scripts/verify_e2e.js`)**:
   - Updated enum `290` to **`Claude Opus 5.5 (Vertex AI)`** (`claude-opus-5-5`) and enum `333` to **`Claude Sonnet 5.5 (Vertex AI)`** (`claude-sonnet-5-5`) across `DROPDOWN_MODELS`, `defaultCascadeModelConfigData`, `fetchAvailableModels`, and `map_model_name()` while maintaining backward compatibility for `Claude Opus 5` / `Claude Sonnet 5` aliases (`test_27_main_page_readme_and_8_model_ga_catalog_sync`).
@@ -82,8 +103,8 @@ All notable changes to the **Antigravity Web Hub** project will be documented in
   - Added 4-tier `C0..C3` ambiguity classifier and autonomous `<self_grill_locked_spec>` compiler with Elo prior tracking (`/dev/shm/grill_me_priors.json`).
 - **Pillar 8 — Multi-Loop Web UI & SVG Geometry Auditor (`src/playwright_scraper/audit_web_ui_geometry.py` `v2.0`)**:
   - Enforces 5 DOM/SVG geometry checks (`svg_text_outside_box`, `svg_line_cuts_card`, `svg_line_cuts_text`, `svg_sibling_box_overlap`, `html_box_overflow`) plus `fitAllSvgTextToBoxes(root)` runtime clamping.
-- **Pillar 9 — Unified 14-Mode Evaluation Router & Skillgrade Engine (`src/autonomy_engine/unified_eval_router.py` `v2.5`)**:
-  - Supports 14 evaluation modes (`auto`, `fast`, `replay`, `skill-ab`, `tripartite-uroboros`, `panel-bt-consensus`, `paired-stat-diff`, `zero-flake-11pass`, etc.) with Bradley-Terry Elo, McNemar exact test, and `Skillgrade` (`SG-1..SG-5`) scoring, plus `delphi_six_hats_task_router.py`, `trope_scanner.py`, and `snapshot_guard.py`.
+- **Pillar 9 — Unified 14-Mode Evaluation Router & Clean-Room Grading Suite Engine (`src/autonomy_engine/unified_eval_router.py` `v2.5`)**:
+  - Supports 14 evaluation modes (`auto`, `fast`, `replay`, `skill-ab`, `tripartite-consensus`, `panel-bt-consensus`, `paired-stat-diff`, `zero-flake-11pass`, etc.) with Bradley-Terry Elo, McNemar exact test, and `Clean-Room Grading Suite` (`SG-1..SG-5`) scoring, plus `delphi_six_hats_task_router.py`, `trope_scanner.py`, and `snapshot_guard.py`.
 - **Pillar 10 — Nightly Dreaming Engine v5.2 & Workspace Hygiene (`src/knowledge_graph/dreaming_engine.py`, `src/autonomy_engine/workspace_hygiene_gate.py`)**:
   - Added 4-Axis Trajectory Backtracking (`backtrack_trajectory_4axis`), Incremental JSONL Byte-Offset Watermark Reader (`read_incremental_jsonl_watermark`), Bitemporal KG (`kg_bitemporal_engine.py`), $k$-hop BFS traversal (`kg_traversal_engine.py`), and interactive 3D/SVG viewer (`knowledge_graph_explorer.html`).
 - **Pillar 11–14 — Clean-Room Workspace Adapter (`agent_ssot_formatter.py`), BENTO Diagram Compiler (`render_gcp_draw.py` `v15.5`), Standalone RFC 6455 CDP Navigator (`cdp_navigator.py` `v2.0`), & 20 Clean-Room Skills (`skills/`)**:
@@ -118,12 +139,12 @@ All notable changes to the **Antigravity Web Hub** project will be documented in
 ### 🚀 Fixes & Model Routing Enhancements
 - **Allowlisted `language_server` Enum Mapping (`src/ccpa_mock.py`)**: Mapped all 7 UI dropdown models to native allowlisted `language_server` enums so interactive UI prompts stream end-to-end without protocol envelope drops:
   - `Gemini 3.8 Flash` (Default) $\rightarrow$ `enum 352` (`352` $\rightarrow$ `gemini-3.8-flash`)
-  - `Gemini 3.7 Flash` $\rightarrow$ `enum 350` (`350` $\rightarrow$ `gemini-3.7-flash`)
-  - `Gemini 3.6 Flash` $\rightarrow$ `enum 348` (`MODEL_GOOGLE_GEMINI_2_5_FLASH` $\rightarrow$ `gemini-3.6-flash`)
-  - `Gemini 3.5 Flash Lite` $\rightarrow$ `enum 330` (`MODEL_GOOGLE_GEMINI_2_5_FLASH_LITE` $\rightarrow$ `gemini-3.5-flash-lite`)
-  - `Claude Opus 5 (Vertex AI)` $\rightarrow$ `enum 290` (`MODEL_CLAUDE_4_OPUS` $\rightarrow$ `claude-opus-5`)
-  - `Claude Sonnet 5 (Vertex AI)` $\rightarrow$ `enum 333` (`MODEL_CLAUDE_4_5_SONNET` $\rightarrow$ `claude-sonnet-5`)
-  - `Claude Fable 5 (Next-Gen)` $\rightarrow$ `enum 340` (`MODEL_CLAUDE_4_5_HAIKU` $\rightarrow$ `claude-fable-5`)
+  - `Gemini 3.5 Flash` $\rightarrow$ `enum 350` (`350` $\rightarrow$ `gemini-3.5-flash`)
+  - `Gemini 3.6 Flash` $\rightarrow$ `enum 348` (legacy flash proto slot $\rightarrow$ `gemini-3.6-flash`)
+  - `Gemini 3.5 Flash Lite` $\rightarrow$ `enum 330` (legacy flash proto slot $\rightarrow$ `gemini-3.5-flash-lite`)
+  - `Claude Opus 5 (Vertex AI)` $\rightarrow$ `enum 290` (legacy partner proto slot $\rightarrow$ `claude-opus-5`)
+  - `Claude Sonnet 5 (Vertex AI)` $\rightarrow$ `enum 333` (legacy partner proto slot $\rightarrow$ `claude-sonnet-5`)
+  - `Claude Fable 5 (Next-Gen)` $\rightarrow$ `enum 340` (legacy partner proto slot $\rightarrow$ `claude-fable-5`)
 
 ---
 
@@ -155,7 +176,7 @@ All notable changes to the **Antigravity Web Hub** project will be documented in
 
 ### 🛠️ Production Fixes & Hardening
 - **Bundled Standalone `language_server` Binary**: Bundled verified Go `language_server` binary directly in `bin/` and updated `scripts/install.sh` to prioritize repository packages over Google CDN downloads, preventing extension server flag incompatibility (`--subclient_type=hub`).
-- **Anthropic Model Garden 404 Auto-Fallback**: Integrated automatic failover to `gemini-3.7-flash` in `src/ccpa_mock.py` when target GCP projects lack Anthropic Model Garden Marketplace enablement.
+- **Anthropic Model Garden 404 Auto-Fallback**: Integrated automatic failover to `gemini-3.5-flash` in `src/ccpa_mock.py` when target GCP projects lack Anthropic Model Garden Marketplace enablement.
 - **Compute Tier Upgrade**: Default instance upgraded from `c2-standard-8` to `c2-standard-16` (16 vCPUs, 64 GB RAM), reducing Time-to-Initial-Render (TTIR) by 41.6% (from 6.80s to 3.97s).
 - **Persistent Stream Headless In-Browser Testing**: Standardized `scripts/verify_e2e.js` and `playwright-cdp` invocations with `waitUntil: "none"` to prevent navigation timeouts on long-lived gRPC chunked streams (`JetboxSubscribeToSummaries`, `JetboxSubscribeToState`, `ProjectUpdatesStream`).
 - **Dynamic Binary & Module Resolution**: Updated `scripts/verify_e2e.js` with multi-path `ws` resolution and automatic Chrome/Chromium binary discovery across environments.
@@ -165,7 +186,7 @@ All notable changes to the **Antigravity Web Hub** project will be documented in
 ## [3.1.0] - 2026-08-21 — 🚀 Multi-Model Routing, FastMCP & Clean-Room Automation
 
 ### 🌟 Major Enhancements
-- **Dynamic Multi-Model Catalog Routing (`src/ccpa_mock.py`)**: Real-time intercept and model translation supporting `Gemini 3.7 Flash`, `Gemini 3.6 Flash`, `Gemini 3.5 Flash Lite`, `Claude 3.7 Sonnet`, `Claude Opus 5`, and `Claude Fable 5`.
+- **Dynamic Multi-Model Catalog Routing (`src/ccpa_mock.py`)**: Real-time intercept and model translation supporting `Gemini 3.5 Flash`, `Gemini 3.6 Flash`, `Gemini 3.5 Flash Lite`, `Claude Sonnet 5`, `Claude Opus 5`, and `Claude Fable 5`.
 - **FastMCP Protocol Implementation**: Migrated all auxiliary tools to standard Model Context Protocol (MCP) servers (`transport="stdio"`):
   - `knowledge_graph`: SQLite-WAL property graph with ACT-R decay and `/dev/shm/` fast cache.
   - `autonomy_engine`: AAAK 3-pass token compression, 4-voice polyphonic factual search, and context envelope hydration.
@@ -217,7 +238,7 @@ All notable changes to the **Antigravity Web Hub** project will be documented in
 - **Enterprise GCP Sandbox Org Policy Domain Restrictions**: Added explicit guidance and comments in `terraform/terraform.tfvars.example` and `SETUP.md` specifying the use of Enterprise GCP Sandbox Admin user accounts (`admin@...example.com`) to comply with `constraints/iam.allowedPolicyMemberDomains`.
 - **Auth RPC Interception & Onboarding Bypass**: Added Nginx location rules for `GetAuthStatus`, `HasAuthToken`, `LoginWithBrowser`, `fetchUserInfo`, `loadCodeAssist`, `fetchAdminControls`, and `fetchAvailableModels` proxying to `ccpa_mock.py` (`:8083`), fixing SPA client-side redirects to `/onboarding`.
 - **CSRF Token Alignment**: Standardized `CSRF_TOKEN=antigravity_secret_csrf_token_12345` across `.env.example`, `start_hub.sh`, `/etc/antigravity-web.env`, and `config/nginx.conf`, eliminating `Grpc-Status: 16 (invalid CSRF token)` errors.
-- **Model Dropdown Proto3 Choice Wrappers**: Formatted model choice enums (`348` Gemini 3.5 Flash, `330` Gemini 3.1 Flash Lite Preview, `343` Gemini 3.1 Pro) using `{choice: {case: "model", value: val}}` for `@bufbuild/protobuf` compatibility in the browser.
+- **Model Dropdown Proto3 Choice Wrappers**: Formatted model choice enums (`348` Gemini 3.5 Flash, `330` Gemini 3.5 Flash Lite / Pro, `343` Gemini 3.5 Flash Lite / Pro) using `{choice: {case: "model", value: val}}` for `@bufbuild/protobuf` compatibility in the browser.
 - **gcloud ECP Socket Leak Handling**: Added `pkill -9 -f "ecp"` and `pkill -9 -f "gcloud"` in retry wrappers to resolve `[Errno 98] Address already in use` socket errors.
 - **Terraform Unmanaged Instance Group Self-Link**: Fixed `instances` parameter in `google_compute_instance_group.unmanaged_ig` to use `google_compute_instance.hub_vm.self_link`.
 

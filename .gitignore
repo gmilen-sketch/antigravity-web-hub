@@ -14,11 +14,15 @@ tokens.json
 oauth-token*
 ADC*
 
-# Runtime state that shouldn't be published
+# Runtime state & local workstation handovers that must never be published
 claude_cascades/
 *.db
 *.log
 brain/
+.gemini/
+HANDOVER.md
+PROMPTS_HISTORY.md
+scratch/
 
 # Terraform
 terraform/.terraform/
