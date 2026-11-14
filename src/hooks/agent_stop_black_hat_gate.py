@@ -1,32 +1,34 @@
 #!/usr/bin/env python3
-"""Black-Hat Critic Stop Gate (v4.3 - 2-Stage Stateless Goldfish -> Isolated Judge, Clean-Room Edition).
+"""Black-Hat Critic Stop Gate (v4.18 - Adaptive Multi-Goldfish Wave -> Holistic Judge, Clean-Room Edition).
 
-Antigravity `Stop` lifecycle hook. Forces the agent to run an independent adversarial
-verification pass before it is allowed to end a turn in which it mutated state or
-declared completion.
+Antigravity & Multi-Harness `Stop` lifecycle hook. Forces the agent to run an independent
+adversarial verification pass before ending a turn in which it mutated state or declared completion.
 
-Design invariants (v4.3):
-  1. TURN SCOPE      - evidence is read only from the current turn (everything after
-                       the last USER_INPUT/USER_EXPLICIT step).
+Design invariants (v4.18):
+  1. TURN SCOPE      - evidence is read only from the current turn (after the last USER_INPUT step).
   2. DEFAULT-DENY    - triggers on durable state mutation or explicit deliverable/completion claims.
-  3. STRUCTURAL PROOF- Primary route: 2-stage `black-hat-goldfish` (stateless investigator, C1-C5)
-                       followed by `black-hat-judge` (isolated adjudicator reading goldfish transcript, C6-C8).
-                       Fallback route: single-stage `black-hat-critic` when neither goldfish nor judge
-                       was invoked (unless BH_GATE_STRICT_TWO_STAGE=1).
-  4. ATTACHED CHECKS - runs in-process AST/JSON/file-size/test-facade verification on mutated files.
-  5. BOTTOM SUMMARY  - enforces Compact 2-Part Bottom Summary when a substantive pre-critic response exists.
+  3. STRUCTURAL PROOF- Primary route: 2-stage `black-hat-goldfish` (`K=1..3` `[SHARD:<id>]` wave, C1-C5)
+                       followed by `black-hat-judge` (holistic adjudicator reading 100% shard transcripts, C6-C8).
+                       Fallback route: single-stage `black-hat-critic` when neither goldfish nor judge was invoked.
+  4. ATTACHED CHECKS - runs in-process AST/JSON/file-size/test-facade verification (`compile()`, zero `.pyc`).
+  5. BOTTOM SUMMARY  - enforces Compact 2-Part Bottom Summary & restores held-back deliverable artifact cards.
   6. BOUNDED         - self-throttles on `executionNum` at MAX_FORCED_CONTINUATIONS.
-  7. NON-RECURSIVE   - never gates critic/goldfish/judge/leaf subagents.
+  7. NON-RECURSIVE   - never gates critic/goldfish/judge/leaf subagents or verified isolated SWE sandboxes.
 """
 
 import ast
 import json
 import os
-import py_compile
 import re
 import sys
 import time
 from typing import Any, Dict, List, Optional, Tuple
+
+sys.dont_write_bytecode = True
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, SCRIPT_DIR)
 
 MAX_FORCED_CONTINUATIONS = 2
 
@@ -101,6 +103,9 @@ FILE_MUTATING_TOOLS = {
     "notebook_edit",
     "edit_file",
     "create_file",
+    "Write",
+    "Edit",
+    "MultiEdit",
 }
 
 MUTATING_TOOLS = FILE_MUTATING_TOOLS | {
@@ -122,8 +127,29 @@ MUTATING_COMMAND_PATTERNS = [
     r"\bkubectl\s+(apply|delete|create|patch|scale)\b",
     r"\bterraform\s+(apply|destroy)\b",
     r"\b(diagram[-_]renderer|mmdc)\b",
-    r"(?<![>-])>>?\s*(?!/dev/null(?:\s|$|[;&|)]))[^\s|&]+",
+    r"(?<![0-9<>-])>>?(?![=>&])\s*(?!/dev/null(?:\s|$|[;&|)])|&[12]\b|['\"]?(?:/tmp/|/dev/shm/))[^\s|&;)]+",
 ]
+
+BENIGN_FD_REDIRECT_RE = re.compile(
+    r"(?:\b[12]?\s*>\s*/dev/null\b|\b[12]>\s*&[12]\b|&>\s*/dev/null\b)"
+)
+
+INLINE_PYTHON_EXEMPT_CALL_RE = re.compile(
+    r"""(?x)
+    \bopen\s*\(\s*[fFrRuU]*['"](?:/tmp/|/dev/shm/|[^'"]*/scratch/)[^'"]*['"]\s*,\s*['"][wa+][A-Za-z0-9+]*['"][^)]*\)
+    | \b(?:pathlib\.)?Path\s*\(\s*[fFrRuU]*['"](?:/tmp/|/dev/shm/|[^'"]*/scratch/)[^'"]*['"]\s*\)\s*\.\s*(?:write_text|write_bytes|unlink)\s*\(
+    | \bos\.(?:remove|unlink)\s*\(\s*[fFrRuU]*['"](?:/tmp/|/dev/shm/|[^'"]*/scratch/)[^'"]*['"]\s*\)
+    """
+)
+
+INLINE_PYTHON_WRITE_RE = re.compile(
+    r"""(?x)
+    \bopen\s*\([^)]*,\s*['"][wa+][A-Za-z0-9+]*['"]
+    | \.(?:write_text|write_bytes)\s*\(
+    | \bshutil\.(?:copy|copy2|copytree|move|rmtree)\s*\(
+    | \bos\.(?:remove|unlink|rename|replace)\s*\(
+    """
+)
 
 READONLY_MCP_PREFIXES = (
     "get_",
@@ -185,7 +211,7 @@ APPROVED_VERDICT = re.compile(r"CRITIC_VERDICT\s*[:=]\s*APPROVED", re.IGNORECASE
 REJECTED_VERDICT = re.compile(r"CRITIC_VERDICT\s*[:=]\s*REJECTED", re.IGNORECASE)
 
 BRAIN_CANDIDATE_ROOTS = [
-    os.path.expanduser("~/.gemini/antigravity/brain"),
+    os.path.expanduser(os.environ.get("ANTIGRAVITY_BRAIN_DIR") or "~/.gemini/antigravity/brain"),
     "/mnt/data/.gemini/antigravity/brain",
 ]
 
@@ -375,9 +401,74 @@ def is_exempt_target(target: str, artifact_dir: str) -> bool:
     return False
 
 
+def _strip_heredoc_and_quotes_fallback(cmd: str) -> str:
+    if not cmd:
+        return ""
+    lines = cmd.splitlines()
+    out_lines: List[str] = []
+    end_tag: Optional[str] = None
+    for ln in lines:
+        if end_tag is not None:
+            if ln.strip() == end_tag:
+                end_tag = None
+            continue
+        m = re.search(r"<<-?\s*['\"]?([A-Za-z_][A-Za-z0-9_]*)['\"]?", ln)
+        out_lines.append(re.sub(r"<<-?\s*['\"]?[A-Za-z_][A-Za-z0-9_]*['\"]?.*$", "", ln))
+        if m:
+            end_tag = m.group(1)
+    stripped = "\n".join(out_lines)
+    stripped = re.sub(r"'[^']*'", "''", stripped)
+    stripped = re.sub(r'"(?:[^"\\]|\\.)*"', '""', stripped)
+    return stripped
+
+
+def _extract_inline_python_payloads(command: str) -> str:
+    if not command:
+        return ""
+    extracted: List[str] = []
+    norm_cmd = (
+        command.replace("\\n", "\n").replace('\\"', '"')
+        if ("\n" not in command and "\\n" in command)
+        else command
+    )
+    for m in re.finditer(
+        r"(?ms)\bpython3?[^\n;|]*<<-?\s*['\"]?([A-Za-z_][A-Za-z0-9_]*)['\"]?[^\n]*\n(.*?)(?:\n\1\b|\Z)",
+        norm_cmd,
+    ):
+        extracted.append(m.group(2) or "")
+    for m in re.finditer(
+        r"(?s)\bpython3?\s+(?:-[A-Za-z0-9]+\s+)*-c\s+(?:'([^']*)'|\"((?:\\.|[^\"\\])*)\")",
+        norm_cmd,
+    ):
+        extracted.append(m.group(1) if m.group(1) is not None else (m.group(2) or ""))
+    return "\n".join(extracted)
+
+
 def is_mutating_command(command: str) -> bool:
+    if not command:
+        return False
+    try:
+        try:
+            from src.hooks.sentinel_dispatch import strip_heredoc_and_quoted_literals
+        except ImportError:
+            from sentinel_dispatch import strip_heredoc_and_quoted_literals  # type: ignore
+    except Exception:
+        strip_heredoc_and_quoted_literals = _strip_heredoc_and_quotes_fallback
+
+    norm_cmd = (
+        command.replace("\\n", "\n").replace('\\"', '"')
+        if ("\n" not in command and "\\n" in command)
+        else command
+    )
+    shell_surface = BENIGN_FD_REDIRECT_RE.sub(" ", strip_heredoc_and_quoted_literals(norm_cmd))
     for pattern in MUTATING_COMMAND_PATTERNS:
-        if re.search(pattern, command, re.IGNORECASE):
+        if re.search(pattern, shell_surface, re.IGNORECASE):
+            return True
+
+    inline_py = _extract_inline_python_payloads(norm_cmd)
+    if inline_py:
+        cleaned_py = INLINE_PYTHON_EXEMPT_CALL_RE.sub("", inline_py)
+        if INLINE_PYTHON_WRITE_RE.search(cleaned_py):
             return True
     return False
 
@@ -414,8 +505,6 @@ def is_mutating_mcp(tool_name: str, args: Dict[str, Any]) -> bool:
         rest = raw[4:]
         if "_" not in rest:
             return True
-        # Server names frequently contain underscores (e.g. mcp_cloud_telemetry_discover_*);
-        # inspect every underscore-delimited suffix after the server prefix.
         candidates = [
             rest[idx + 1 :]
             for idx, ch in enumerate(rest)
@@ -448,8 +537,8 @@ def detect_mutations(turn: List[Dict[str, Any]], artifact_dir: str) -> List[str]
             if not is_exempt_target(target, artifact_dir):
                 mutations.append(f"{name} -> {target or '<unknown target>'}")
             continue
-        if name == "run_command":
-            command = str(args.get("CommandLine") or "")
+        if name in ("run_command", "Bash", "bash"):
+            command = str(args.get("CommandLine") or args.get("command") or "")
             if is_mutating_command(command):
                 mutations.append(f"run_command -> {command[:120]}")
             continue
@@ -753,16 +842,17 @@ def read_judge_verdict(judge_cid: str, goldfish_cids: Any) -> Tuple[Optional[str
                     tool_calls_count += 1
                     cname = str(call.get("name") or "")
                     cargs = _decode_args(call.get("args"))
-                    if cname in ("read_file", "view_file"):
+                    if cname in ("read_file", "view_file", "Read"):
                         rp = str(
                             cargs.get("Path")
                             or cargs.get("AbsolutePath")
                             or cargs.get("path")
                             or cargs.get("TargetFile")
+                            or cargs.get("file_path")
                             or ""
                         )
                         read_paths.append((cname, rp))
-                    elif cname in ("run_command", "invoke_subagent", "define_subagent") or cname in MUTATING_TOOLS:
+                    elif cname in ("run_command", "Bash", "bash", "invoke_subagent", "define_subagent") or cname in MUTATING_TOOLS:
                         forbidden_tool = cname
     except Exception as exc:
         return None, f"judge transcript unreadable: {exc!r}"
@@ -789,7 +879,6 @@ def read_judge_verdict(judge_cid: str, goldfish_cids: Any) -> Tuple[Optional[str
             f"did not read an active goldfish shard transcript ({', '.join(c[:8] for c in wave_cids)})"
         )
 
-    # C6-Multi: Judge must read 100% of active goldfish shard transcripts (in any order)
     missing_cids = [gcid for gcid in wave_cids if not any(_is_gf_transcript(rp, gcid) for _, rp in read_paths)]
     if missing_cids:
         return None, (
@@ -797,7 +886,6 @@ def read_judge_verdict(judge_cid: str, goldfish_cids: Any) -> Tuple[Optional[str
             f"{', '.join(c[:8] for c in missing_cids)}"
         )
 
-    # C6-Holistic: When K >= 2 shards ran, Judge must also spot-check >= 1 non-transcript deliverable directly
     if len(wave_cids) >= 2:
         deliverable_reads = [
             rp for _, rp in read_paths
@@ -895,25 +983,22 @@ def resolve_active_goldfish_wave(
     goldfish_spawns: List[Tuple[int, str, Optional[str], bool, Optional[str]]],
     judge_spawns: List[Tuple[int, str, Optional[str], bool, Optional[str]]],
 ) -> List[Tuple[int, str, Optional[str], bool, Optional[str]]]:
-    """Resolves the active `K=1..3` Goldfish wave after the most recent rejected/superseded Judge round, supporting `[SHARD:<id>]` selective delta retries."""
+    """Resolves the active `K=1..3` Goldfish wave after the most recent rejected/superseded Judge round."""
     if not goldfish_spawns:
         return []
     last_gf_step = goldfish_spawns[-1][0]
-    prior_judges = [j[0] for j in judge_spawns if j[0] < last_gf_step]
+    prior_judges = [j[0] for j in judge_spawns if j[2] and j[0] < last_gf_step]
     wave_floor = (max(prior_judges) + 1) if prior_judges else 0
     post_floor = [g for g in goldfish_spawns if g[0] >= wave_floor]
     if not post_floor:
         post_floor = [goldfish_spawns[-1]]
 
-    # Group selective `[SHARD:<id>]` spawns so delta retry of one shard preserves passing sibling shards
     has_any_shard_tag = any(g[4] is not None for g in post_floor)
     if has_any_shard_tag:
         latest_untagged_step = max((g[0] for g in post_floor if g[4] is None), default=-1)
         sharded_after = [g for g in post_floor if g[0] > latest_untagged_step]
         if not sharded_after:
-            # Latest spawn was an untagged full-replacement K=1 goldfish
-            same_step = [g for g in post_floor if g[0] == latest_untagged_step]
-            return same_step
+            return [g for g in post_floor if g[0] == latest_untagged_step]
         by_shard: Dict[str, Tuple[int, str, Optional[str], bool, Optional[str]]] = {}
         untagged_same_step: List[Tuple[int, str, Optional[str], bool, Optional[str]]] = []
         for item in sharded_after:
@@ -924,17 +1009,77 @@ def resolve_active_goldfish_wave(
                 untagged_same_step.append(item)
         return list(by_shard.values()) + untagged_same_step
 
-    # Untagged wave: take all co-spawned goldfish in the latest step `last_gf_step`
     return [g for g in post_floor if g[0] == last_gf_step]
+
+
+def _validate_active_goldfish_wave(
+    active_wave: List[Tuple[int, str, Optional[str], bool, Optional[str]]],
+    min_wave_idx: int,
+) -> Tuple[bool, str, List[str]]:
+    wave_cids: List[str] = []
+    for g_idx, g_prompt, g_cid, g_restricted, g_shard in active_wave:
+        shard_lbl = f" [SHARD:{g_shard}]" if g_shard else ""
+        if g_restricted:
+            return (
+                False,
+                f"goldfish{shard_lbl} prompt restricted independent command execution ('read_file only' / 'do not run commands' is prohibited)",
+                [],
+            )
+        spin_hit = detect_goldfish_spin(g_prompt)
+        if spin_hit:
+            return (
+                False,
+                f"goldfish{shard_lbl} prompt contains prohibited spin/excuse framing ({spin_hit!r}); pass de-contextualized claims, paths, and commands only",
+                [],
+            )
+        if not g_cid:
+            return False, f"black-hat-goldfish{shard_lbl} invoked at step {g_idx} without a resolved conversationId", []
+        gf_ok, gf_detail = read_goldfish_dossier(g_cid)
+        if not gf_ok:
+            return False, f"{gf_detail}{shard_lbl}", []
+        if g_cid not in wave_cids:
+            wave_cids.append(g_cid)
+    return True, "", wave_cids
+
+
+def _evaluate_critic_spawns(
+    critic_spawns: List[Tuple[int, str, Optional[str], bool, Optional[str]]],
+    min_step_after: int = -1,
+) -> Tuple[bool, str, int]:
+    scoped = [c for c in critic_spawns if c[0] > min_step_after]
+    if not scoped:
+        return False, "no independent verification executed in this turn", -1
+
+    spawn_pairs = [(idx, cid) for idx, _, cid, restricted, _ in scoped if cid and not restricted]
+    restricted_prompt_detected = any(restricted for _, _, _, restricted, _ in scoped)
+    if not spawn_pairs and restricted_prompt_detected:
+        return (
+            False,
+            "critic prompt restricted independent command execution ('read_file only' / 'do not run commands' is prohibited)",
+            -1,
+        )
+    if not spawn_pairs:
+        return False, "critic subagent invoked without a resolved conversation id", -1
+
+    seen_cids: List[Tuple[int, str]] = []
+    for s_idx, s_cid in spawn_pairs:
+        if s_cid not in {c for _, c in seen_cids}:
+            seen_cids.append((s_idx, s_cid))
+    for s_idx, s_cid in reversed(seen_cids):
+        verdict, detail = read_subagent_verdict(s_cid)
+        if verdict == "APPROVED":
+            return True, detail, s_idx
+        if verdict == "REJECTED":
+            return False, detail, s_idx
+    _, last_detail = read_subagent_verdict(seen_cids[-1][1])
+    return False, last_detail or "critic produced no verdict", seen_cids[-1][0]
 
 
 def find_goldfish_judge_proof(
     goldfish_spawns: List[Tuple[int, str, Optional[str], bool, Optional[str]]],
     judge_spawns: List[Tuple[int, str, Optional[str], bool, Optional[str]]],
 ) -> Tuple[bool, str, int]:
-    """v4.18 Multi-Goldfish Wave Barrier (`C2-Wave`, `C4b-Wave`, `C5b-Wave`, `C6-Multi`, `C6-Holistic`, `C10b`).
-    Returns `(passed, detail, min_wave_step_idx)`.
-    """
+    """v4.18 Multi-Goldfish Wave Barrier (`C2-Wave`, `C4b-Wave`, `C5b-Wave`, `C6-Multi`, `C6-Holistic`, `C10b`)."""
     if not goldfish_spawns:
         return (
             False,
@@ -946,29 +1091,9 @@ def find_goldfish_judge_proof(
     min_wave_idx = min(g[0] for g in active_wave)
     max_wave_idx = max(g[0] for g in active_wave)
 
-    wave_cids: List[str] = []
-    for g_idx, g_prompt, g_cid, g_restricted, g_shard in active_wave:
-        shard_lbl = f" [SHARD:{g_shard}]" if g_shard else ""
-        if g_restricted:
-            return (
-                False,
-                f"goldfish{shard_lbl} prompt restricted independent command execution ('read_file only' / 'do not run commands' is prohibited)",
-                min_wave_idx,
-            )
-        spin_hit = detect_goldfish_spin(g_prompt)
-        if spin_hit:
-            return (
-                False,
-                f"goldfish{shard_lbl} prompt contains prohibited spin/excuse framing ({spin_hit!r}); pass de-contextualized claims, paths, and commands only",
-                min_wave_idx,
-            )
-        if not g_cid:
-            return False, f"black-hat-goldfish{shard_lbl} invoked at step {g_idx} without a resolved conversationId", min_wave_idx
-        gf_ok, gf_detail = read_goldfish_dossier(g_cid)
-        if not gf_ok:
-            return False, f"{gf_detail}{shard_lbl}", min_wave_idx
-        if g_cid not in wave_cids:
-            wave_cids.append(g_cid)
+    wave_ok, wave_err, wave_cids = _validate_active_goldfish_wave(active_wave, min_wave_idx)
+    if not wave_ok:
+        return False, wave_err, min_wave_idx
 
     if not judge_spawns:
         return (
@@ -978,7 +1103,11 @@ def find_goldfish_judge_proof(
             min_wave_idx,
         )
 
-    j_idx, _j_prompt, j_cid, _j_restricted, _j_shard = judge_spawns[-1]
+    post_wave_judges = [j for j in judge_spawns if j[0] > max_wave_idx]
+    resolved_post_wave_judges = [j for j in post_wave_judges if j[2]]
+    selected_judge = resolved_post_wave_judges[-1] if resolved_post_wave_judges else judge_spawns[-1]
+
+    j_idx, _j_prompt, j_cid, _j_restricted, _j_shard = selected_judge
     if j_idx <= max_wave_idx:
         if any(g[0] < j_idx for g in goldfish_spawns):
             return (
@@ -1011,39 +1140,42 @@ def find_structural_proof(turn: List[Dict[str, Any]]) -> Tuple[bool, str]:
 def find_structural_proof_with_index(turn: List[Dict[str, Any]]) -> Tuple[bool, str, int]:
     goldfish_spawns = _extract_subagent_spawns(turn, GOLDFISH_AGENT_NAME)
     judge_spawns = _extract_subagent_spawns(turn, JUDGE_AGENT_NAME)
-    if goldfish_spawns or judge_spawns:
-        return find_goldfish_judge_proof(goldfish_spawns, judge_spawns)
+    strict_two_stage = os.environ.get("BH_GATE_STRICT_TWO_STAGE") == "1"
 
-    if os.environ.get("BH_GATE_STRICT_TWO_STAGE") == "1":
+    if goldfish_spawns or judge_spawns:
+        gj_ok, gj_detail, min_wave_idx = find_goldfish_judge_proof(goldfish_spawns, judge_spawns)
+        if gj_ok or strict_two_stage:
+            return gj_ok, gj_detail, min_wave_idx
+
+        critic_spawns = _extract_subagent_spawns(turn, CRITIC_AGENT_NAME)
+        if goldfish_spawns and critic_spawns:
+            active_wave = resolve_active_goldfish_wave(goldfish_spawns, judge_spawns)
+            w_min = min(g[0] for g in active_wave)
+            w_max = max(g[0] for g in active_wave)
+            wave_ok, _wave_err, wave_cids = _validate_active_goldfish_wave(active_wave, w_min)
+            has_resolved_post_wave_judge = any(bool(j[2]) for j in judge_spawns if j[0] > w_max)
+            if wave_ok and not has_resolved_post_wave_judge:
+                c_ok, c_detail, _c_idx = _evaluate_critic_spawns(critic_spawns, min_step_after=w_max)
+                if c_ok:
+                    wave_lbl = ",".join(c[:8] for c in wave_cids)
+                    return (
+                        True,
+                        f"Stage-1 goldfish ({wave_lbl}) + fallback {c_detail}",
+                        w_min,
+                    )
+        elif not goldfish_spawns and critic_spawns and all(not j[2] for j in judge_spawns):
+            max_aborted_j = max((j[0] for j in judge_spawns), default=-1)
+            c_ok, c_detail, c_idx = _evaluate_critic_spawns(critic_spawns, min_step_after=max_aborted_j)
+            if c_ok:
+                return True, c_detail, c_idx
+
+        return gj_ok, gj_detail, min_wave_idx
+
+    if strict_two_stage:
         return False, "no 2-stage black-hat-goldfish -> black-hat-judge verification executed in this turn", -1
 
     critic_spawns = _extract_subagent_spawns(turn, CRITIC_AGENT_NAME)
-    if not critic_spawns:
-        return False, "no independent verification executed in this turn", -1
-
-    spawn_pairs = [(idx, cid) for idx, _, cid, restricted, _ in critic_spawns if cid and not restricted]
-    restricted_prompt_detected = any(restricted for _, _, _, restricted, _ in critic_spawns)
-    if not spawn_pairs and restricted_prompt_detected:
-        return (
-            False,
-            "critic prompt restricted independent command execution ('read_file only' / 'do not run commands' is prohibited)",
-            -1,
-        )
-    if not spawn_pairs:
-        return False, "critic subagent invoked without a resolved conversation id", -1
-
-    seen_cids: List[Tuple[int, str]] = []
-    for s_idx, s_cid in spawn_pairs:
-        if s_cid not in {c for _, c in seen_cids}:
-            seen_cids.append((s_idx, s_cid))
-    for s_idx, s_cid in reversed(seen_cids):
-        verdict, detail = read_subagent_verdict(s_cid)
-        if verdict == "APPROVED":
-            return True, detail, s_idx
-        if verdict == "REJECTED":
-            return False, detail, s_idx
-    _, last_detail = read_subagent_verdict(seen_cids[-1][1])
-    return False, last_detail or "critic produced no verdict", seen_cids[-1][0]
+    return _evaluate_critic_spawns(critic_spawns)
 
 
 def extract_pre_critic_response(turn: List[Dict[str, Any]]) -> str:
@@ -1126,7 +1258,7 @@ def rejection_text(
         )
     brain_root = BRAIN_CANDIDATE_ROOTS[0]
     return (
-        "BLACK-HAT CRITIC GATE (v4.3 Goldfish -> Judge): independent verification missing.\n\n"
+        "BLACK-HAT CRITIC GATE (v4.18 Adaptive Goldfish -> Holistic Judge): independent verification missing.\n\n"
         f"{claim_line}"
         f"State mutated in this turn:\n{listed}\n\n"
         f"Gate status: {proof_detail}.\n\n"
@@ -1221,14 +1353,37 @@ def last_critic_step_index(turn: List[Dict[str, Any]]) -> int:
     return last_idx
 
 
+def detect_case_r_reactive_task_wakeup(turn: List[Dict[str, Any]], steps: List[Dict[str, Any]]) -> bool:
+    """Case R Reactive `/task-` Wakeup Phase-2 Write Unlock."""
+    for entry in reversed(steps[-6:] if len(steps) >= 6 else steps):
+        content = str(entry.get("content") or "")
+        if "/task-" in content or "background task" in content.lower() or "subagent completed" in content.lower():
+            return True
+    for entry in turn:
+        content = str(entry.get("content") or "")
+        if "/task-" in content:
+            return True
+    return False
+
+
+def is_isolated_swe_sandbox_turn(payload: Dict[str, Any], seed_text: str) -> bool:
+    """Short-circuits enterprise multi-subagent Stop gating when running inside an isolated SWE/TBench container."""
+    if os.environ.get("ANTIGRAVITY_SWE_SANDBOX") == "1" or os.environ.get("TBENCH_SANDBOX") == "1":
+        return True
+    cwd = str(payload.get("cwd") or os.getcwd())
+    if cwd.startswith("/testbed") or "/workspace/swe-bench" in cwd:
+        return True
+    if seed_text and ("/testbed" in seed_text or "terminal-bench" in seed_text.lower()):
+        return True
+    return False
+
+
 def _restore_held_artifacts(artifact_dir: str) -> List[str]:
     if not artifact_dir:
         return []
     try:
-        try:
-            from src.hooks.black_hat_in_progress_ux_hook import restore_deliverable_artifact_cards
-        except ImportError:
-            from black_hat_in_progress_ux_hook import restore_deliverable_artifact_cards  # type: ignore
+        from black_hat_in_progress_ux_hook import restore_deliverable_artifact_cards
+
         return restore_deliverable_artifact_cards(artifact_dir)
     except Exception:
         return []
@@ -1238,10 +1393,8 @@ def _is_isolated_swe_benchmark_turn(payload: Dict[str, Any]) -> bool:
     if os.environ.get("AGW_EXECUTION_MODE", "").strip().upper() == "SWE_BENCHMARK_MODE":
         return True
     try:
-        try:
-            from src.hooks.kg_pre_invocation_hook import classify_execution_mode
-        except ImportError:
-            from kg_pre_invocation_hook import classify_execution_mode  # type: ignore
+        from kg_pre_invocation_hook import classify_execution_mode
+
         mode_res = classify_execution_mode(
             str(payload.get("prompt") or ""),
             cwd=str(payload.get("cwd") or ""),
@@ -1294,10 +1447,29 @@ def evaluate(payload: Dict[str, Any]) -> Dict[str, Any]:
     seed = first_user_input(steps)
     if "<hydrated_context>" in seed or "MAX_DEPTH=1" in seed:
         return allow("leaf subagent conversation (<hydrated_context> / MAX_DEPTH=1) is exempt")
-    if re.search(r"black[- ]hat|CRITIC_VERDICT", seed, re.IGNORECASE):
-        return allow("conversation seeded as a black-hat audit")
+
+    if is_isolated_swe_sandbox_turn(payload, seed):
+        return allow("isolated SWE/TBench sandbox turn short-circuited")
 
     turn = slice_current_turn(steps)
+    case_r_wakeup = detect_case_r_reactive_task_wakeup(turn, steps)
+
+    if turn:
+        attached_ok_early, attached_failures_early = run_attached_black_hat_verification(turn, artifact_dir)
+        if not attached_ok_early:
+            attached_detail_early = "in-process attached verification failed: " + "; ".join(attached_failures_early)
+            return {
+                "decision": "continue",
+                "reason": rejection_text(detect_mutations(turn, artifact_dir), None, attached_detail_early, ""),
+                "audit": f"blocked: {attached_detail_early}",
+                "mutations": len(detect_mutations(turn, artifact_dir)),
+                "claim": None,
+                "case_r_wakeup": case_r_wakeup,
+            }
+
+    if re.search(r"black[- ]hat|CRITIC_VERDICT", seed, re.IGNORECASE):
+        return allow("conversation seeded as a black-hat audit", case_r_wakeup=case_r_wakeup)
+
     if not turn:
         return allow("no steps in current turn")
 
@@ -1327,7 +1499,6 @@ def evaluate(payload: Dict[str, Any]) -> Dict[str, Any]:
             "claim": claim,
         }
 
-    # Exemption (c) (G2): Isolated SWE_BENCHMARK_MODE container verified by post-mutation local tests
     if _is_isolated_swe_benchmark_turn(payload):
         swe_proof = has_post_mutation_local_test_proof(turn)
         if swe_proof.get("verified"):
@@ -1417,13 +1588,6 @@ def main() -> None:
     print(json.dumps(response))
 
 
-
-
-# ==============================================================================
-# v4.18 Clean-Room Upgrades: C9 Pre-Prose Table Gate (>= 5-Row Floor + read_file),
-# Bottom-Up TL;DR Pyramid (Inline-Backtick Safe), AST Anti-Tamper & Proof Freshness
-# ==============================================================================
-
 def _strip_inline_backtick_spans(text: str) -> str:
     """Replaces single-line `inline code` spans so literal `<details>` or pipes do not trip prose parsers."""
     if not text:
@@ -1432,11 +1596,7 @@ def _strip_inline_backtick_spans(text: str) -> str:
 
 
 def check_c9_pre_prose_table_gate(turn_steps: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    C9 Pre-Prose Table Gate (`G5a` >= 5-Row Floor): When a response contains a multi-row
-    Markdown table (>= 5 pipe rows = header + separator + >= 3 data rows), verifies that
-    the backing artifact was read via `read_file` or legacy `view_file` prior to prose emission.
-    """
+    """C9 Pre-Prose Table Gate (`G5a` >= 5-Row Floor)."""
     if not turn_steps:
         return {"passed": True, "reason": "No steps"}
     last_prose = ""
@@ -1461,7 +1621,7 @@ def check_c9_pre_prose_table_gate(turn_steps: List[Dict[str, Any]]) -> Dict[str,
             if not isinstance(tc, dict):
                 continue
             tname = tc.get("name")
-            if tname in ("read_file", "view_file"):
+            if tname in ("read_file", "view_file", "Read"):
                 targs = _decode_args(tc.get("args"))
                 p = str(targs.get("Path") or targs.get("AbsolutePath") or targs.get("file_path") or "")
                 viewed_files.append(p)
@@ -1473,11 +1633,7 @@ def check_c9_pre_prose_table_gate(turn_steps: List[Dict[str, Any]]) -> Dict[str,
 
 
 def check_chat_bottom_up_tldr_structure(response_text: str) -> Dict[str, Any]:
-    """
-    Chat Bottom-Up Pyramid Gate (`G3` inline-backtick safe): Responses > 120 words must place
-    '### ⚡ TL;DR' near the bottom with <= 95 words, balanced `<details>` blocks (ignoring inline
-    backticks like `` `<details>` ``), and zero fenced code blocks or Markdown tables below TL;DR.
-    """
+    """Chat Bottom-Up Pyramid Gate (`G3` inline-backtick safe)."""
     words = response_text.split()
     if len(words) <= 120:
         return {"passed": True, "exempt": True, "word_count": len(words)}
@@ -1513,10 +1669,7 @@ def check_chat_bottom_up_tldr_structure(response_text: str) -> Dict[str, Any]:
 
 
 def audit_git_diff_test_tampering(diff_text: str) -> Dict[str, Any]:
-    """
-    Scans a unified git diff for reward-hacking test tampering (deleted assert statements,
-    added @unittest.skip / pytest.mark.skip without replacement assertions).
-    """
+    """Scans a unified git diff for reward-hacking test tampering."""
     deleted_asserts = 0
     added_asserts = 0
     added_skips = 0
@@ -1550,11 +1703,7 @@ def verify_subagent_proof_freshness(transcript_path: str, turn_start_epoch: floa
 
 
 def detect_orphaned_background_tasks(turn_steps: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    C14f Orphaned Background-Task & Non-Daemon Cron Livelock Guard:
-    Scans turn steps for non-daemon background commands or unbounded recurring cron schedules
-    that were started without subsequent manage_task(Action='kill') cleanup.
-    """
+    """C14f Orphaned Background-Task & Non-Daemon Cron Livelock Guard."""
     unbounded_crons: List[str] = []
     background_cmds: List[str] = []
     killed_tasks: int = 0
@@ -1593,10 +1742,7 @@ def detect_orphaned_background_tasks(turn_steps: List[Dict[str, Any]]) -> Dict[s
 def format_compact_subagent_wakeup(
     summary_text: str, detail_path: str = "", max_bytes: int = 800
 ) -> Dict[str, Any]:
-    """
-    C14g Subagent Return Payload Cap (< 800 B):
-    Ensures subagent wakeup messages remain below max_bytes while referencing detail_path on disk.
-    """
+    """C14g Subagent Return Payload Cap (< 800 B)."""
     raw_bytes = len(summary_text.encode("utf-8"))
     if raw_bytes <= max_bytes:
         return {
@@ -1617,11 +1763,7 @@ def format_compact_subagent_wakeup(
 
 
 def enforce_shebang_exec_and_inmemory_compile(file_paths: List[str]) -> Dict[str, Any]:
-    """
-    AGW-W12-08 (`LL-2`): Sets `0o755` (`st_mode | 0o111`) strictly on files starting with `#!`,
-    clears accidental executable bits on non-shebang `.md`/`.json`/`.txt` files, and validates
-    `.py` files via in-memory `compile(source, path, 'exec')` with zero `__pycache__` disk writes.
-    """
+    """AGW-W12-08 (`LL-2`): Sets `0o755` strictly on `#!` files and validates `.py` via in-memory `compile()`."""
     chmod_exec: List[str] = []
     chmod_cleared: List[str] = []
     compile_errors: List[str] = []
@@ -1658,10 +1800,7 @@ def enforce_shebang_exec_and_inmemory_compile(file_paths: List[str]) -> Dict[str
 
 
 def has_post_mutation_local_test_proof(turn_steps: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """
-    AGW-W12-13 (`NONDEV-BUG-7`): Scans all tool calls and tool results at or after the last
-    file mutation step for a passing local test execution (`pytest`, `unittest`, `--self-test`).
-    """
+    """AGW-W12-13 (`NONDEV-BUG-7`): Scans for passing local test execution at or after last file mutation."""
     last_mut_idx = -1
     for idx, step in enumerate(turn_steps or []):
         for tc in step.get("tool_calls") or []:
@@ -1675,8 +1814,8 @@ def has_post_mutation_local_test_proof(turn_steps: List[Dict[str, Any]]) -> Dict
     scan_slice = (turn_steps or [])[max(0, last_mut_idx) :]
     for step in scan_slice:
         for tc in step.get("tool_calls") or []:
-            if isinstance(tc, dict) and tc.get("name") == "run_command":
-                cmd = str(_decode_args(tc.get("args")).get("CommandLine") or "")
+            if isinstance(tc, dict) and tc.get("name") in ("run_command", "Bash", "bash"):
+                cmd = str(_decode_args(tc.get("args")).get("CommandLine") or _decode_args(tc.get("args")).get("command") or "")
                 if test_cmd_re.search(cmd):
                     matched_commands.append(cmd[:120])
         content = str(step.get("content") or "")

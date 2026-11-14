@@ -1549,14 +1549,80 @@ class TestAutonomyKGHooks(unittest.TestCase):
         fc_args = norm_mcp["candidates"][0]["content"]["parts"][0]["functionCall"]["args"]
         self.assertEqual(fc_args["Arguments"], {"project_id": "demo-proj"})
 
-        from hooks.agent_stop_black_hat_gate import is_mutating_command, is_mutating_mcp
+        from hooks.agent_stop_black_hat_gate import (
+            BRAIN_CANDIDATE_ROOTS,
+            find_structural_proof_with_index,
+            is_mutating_command,
+            is_mutating_mcp,
+            resolve_active_goldfish_wave,
+        )
+        import pathlib as _pathlib
+        import re as _re
+
+        valid_policies = {"off", "auto", "eager"}
+        for ag_md in sorted(_pathlib.Path(REPO_ROOT, "agents").glob("*/agent.md")):
+            txt = ag_md.read_text(encoding="utf-8")
+            fm_m = _re.match(r"^---\n(.*?)\n---\n", txt, _re.DOTALL)
+            self.assertIsNotNone(fm_m, f"Missing YAML frontmatter in {ag_md}")
+            pol_m = _re.search(r"^commandExecutionPolicy:\s*(\S+)\s*$", fm_m.group(1), _re.MULTILINE)
+            self.assertIsNotNone(pol_m, f"Missing commandExecutionPolicy in {ag_md}")
+            pol = pol_m.group(1).strip("\"'")
+            self.assertIn(pol, valid_policies)
+            if "black-hat-judge" in str(ag_md):
+                self.assertEqual(pol, "off")
+                self.assertIsNone(_re.search(r"^\s*-\s*(?:run_command|Bash|bash)\s*$", fm_m.group(1), _re.MULTILINE))
+
         self.assertFalse(is_mutating_command("ls ~/.gemini; cat foo.json 2>/dev/null | head -c 500"))
-        self.assertTrue(is_mutating_command("echo test > /tmp/real_write.txt"))
+        self.assertFalse(is_mutating_command("python3 -B << 'PYEOF'\nprint(5 > 2)\nPYEOF"))
+        self.assertFalse(is_mutating_command("echo scratch > /tmp/scratch_probe.txt"))
+        self.assertTrue(is_mutating_command("echo test > /workspace/real_write.txt"))
+        self.assertTrue(is_mutating_command("python3 -B -c \"open('src/real.py', 'w').write('x')\""))
         self.assertFalse(is_mutating_mcp("mcp_cloud_telemetry_discover_billing_export_tables", {}))
         self.assertFalse(is_mutating_mcp("mcp_cloud_telemetry_query_bigquery_billing", {}))
         self.assertFalse(is_mutating_mcp("mcp_knowledge_graph_kg_search", {}))
         self.assertTrue(is_mutating_mcp("mcp_knowledge_graph_kg_upsert_entity", {}))
         self.assertTrue(is_mutating_mcp("mcp_google_workspace_create_document", {}))
+
+        wave = resolve_active_goldfish_wave(
+            [(1, "[SHARD:a] c1", "11111111-1111-1111-1111-111111111111", False, "a"), (3, "[SHARD:b] c2", "22222222-2222-2222-2222-222222222222", False, "b")],
+            [(2, "aborted judge", None, False, None)],
+        )
+        self.assertEqual({w[4] for w in wave}, {"a", "b"})
+
+        tmp_brain = tempfile.mkdtemp(prefix="wh_bh_brain_")
+        orig_roots = list(BRAIN_CANDIDATE_ROOTS)
+        try:
+            BRAIN_CANDIDATE_ROOTS[:] = [tmp_brain]
+            gf_cid = "aaaaaaaa-1111-4111-8111-111111111111"
+            cr_cid = "dddddddd-4444-4444-8444-444444444444"
+            for cid, rows in [
+                (gf_cid, [
+                    {"type": "PLANNER_RESPONSE", "content": "Inspect", "tool_calls": [{"name": "read_file", "args": {"Path": "/tmp/a"}}, {"name": "run_command", "args": {"CommandLine": "pytest -q"}}]},
+                    {"type": "PLANNER_RESPONSE", "content": "FORENSIC_EVIDENCE_DOSSIER\nDISCREPANCY_COUNT: 0"},
+                ]),
+                (cr_cid, [
+                    {"type": "PLANNER_RESPONSE", "content": "Read", "tool_calls": [{"name": "read_file", "args": {"Path": "/tmp/a"}}]},
+                    {"type": "PLANNER_RESPONSE", "content": "Run", "tool_calls": [{"name": "run_command", "args": {"CommandLine": "pytest -q"}}]},
+                    {"type": "PLANNER_RESPONSE", "content": "CRITIC_VERDICT: APPROVED"},
+                ]),
+            ]:
+                ldir = _pathlib.Path(tmp_brain, cid, ".system_generated", "logs")
+                ldir.mkdir(parents=True, exist_ok=True)
+                (ldir / "transcript_full.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+
+            ok_fb, _, w_idx = find_structural_proof_with_index([
+                {"type": "PLANNER_RESPONSE", "tool_calls": [{"name": "invoke_subagent", "args": {"TypeName": "black-hat-goldfish", "Prompt": "Verify"}}]},
+                {"type": "TOOL_RESULT", "content": f"conversationId: {gf_cid}"},
+                {"type": "PLANNER_RESPONSE", "tool_calls": [{"name": "invoke_subagent", "args": {"TypeName": "black-hat-judge", "Prompt": "Judge"}}]},
+                {"type": "TOOL_RESULT", "content": "Error: unknown subagent black-hat-judge"},
+                {"type": "PLANNER_RESPONSE", "tool_calls": [{"name": "invoke_subagent", "args": {"TypeName": "black-hat-critic", "Prompt": "Fallback"}}]},
+                {"type": "TOOL_RESULT", "content": f"conversationId: {cr_cid}"},
+            ])
+            self.assertTrue(ok_fb)
+            self.assertEqual(w_idx, 0)
+        finally:
+            BRAIN_CANDIDATE_ROOTS[:] = orig_roots
+            shutil.rmtree(tmp_brain, ignore_errors=True)
 
     @classmethod
     def tearDownClass(cls):
