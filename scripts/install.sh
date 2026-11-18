@@ -57,10 +57,10 @@ mkdir -p "$BIN_DIR" /opt/antigravity/bin "$RUN_HOME/.gemini/config" "$RUN_HOME/.
 chown -R "$RUN_USER:$RUN_USER" "$RUN_HOME/.gemini" "$RUN_HOME/.agents" "$RUN_HOME/enterprise-workspace" "$RUN_HOME/workspace" /mnt/data/projects 2>/dev/null || true
 
 # Dynamically discover the latest official Antigravity 2.0 Hub release from Google Auto-Updater API
-DEFAULT_AGY_HUB_VERSION="2.29.1"
-DEFAULT_AGY_HUB_EXEC_ID="5241471524274176"
-DEFAULT_AGY_CLI_VERSION="1.5.3"
-DEFAULT_AGY_CLI_EXEC_ID="6604829099950080"
+DEFAULT_AGY_HUB_VERSION="2.33.0"
+DEFAULT_AGY_HUB_EXEC_ID="4731201358004224"
+DEFAULT_AGY_CLI_VERSION="1.5.11"
+DEFAULT_AGY_CLI_EXEC_ID="6132547114106880"
 
 ANTIGRAVITY_RELEASES_MANIFEST_URL="${ANTIGRAVITY_RELEASES_MANIFEST_URL:-https://antigravity-hub-auto-updater-974169037036.us-central1.run.app/releases}"
 AGY_RELEASES_JSON=$(curl -sS --max-time 8 "$ANTIGRAVITY_RELEASES_MANIFEST_URL" 2>/dev/null || true)
@@ -68,9 +68,11 @@ RESOLVED_HUB=$(AGY_JSON="$AGY_RELEASES_JSON" python3 -B -c '
 import json, os
 try:
     data = json.loads(os.environ.get("AGY_JSON", "") or "[]")
-    item = data[0] if isinstance(data, list) and data else ((data.get("releases") or [None])[-1] if isinstance(data, dict) else None)
-    if isinstance(item, dict) and item.get("version") and item.get("execution_id"):
-        print(f"{item[\"version\"]}|{item[\"execution_id\"]}")
+    items = data if isinstance(data, list) else (data.get("releases") or [] if isinstance(data, dict) else [])
+    for item in items:
+        if isinstance(item, dict) and item.get("version") and item.get("version") != "100.0.0" and item.get("execution_id"):
+            print(str(item["version"]) + "|" + str(item["execution_id"]))
+            break
 except Exception:
     pass
 ' 2>/dev/null || true)
@@ -92,9 +94,11 @@ if [ -z "$AGY_CLI_VERSION" ] || [ -z "$AGY_CLI_EXEC_ID" ]; then
 import json, os
 try:
     d = json.loads(os.environ.get("AGY_CLI_JSON", "") or "[]")
-    item = d[0] if isinstance(d, list) and d else ((d.get("releases") or [None])[-1] if isinstance(d, dict) else None)
-    if isinstance(item, dict) and item.get("version") and item.get("execution_id"):
-        print(f"{item[\"version\"]}|{item[\"execution_id\"]}")
+    items = d if isinstance(d, list) else (d.get("releases") or [] if isinstance(d, dict) else [])
+    for item in items:
+        if isinstance(item, dict) and item.get("version") and item.get("version") != "100.0.0" and item.get("execution_id"):
+            print(str(item["version"]) + "|" + str(item["execution_id"]))
+            break
 except Exception:
     pass
 ' 2>/dev/null || true)
@@ -111,13 +115,45 @@ TARGET_STAMP="${AGY_HUB_VERSION}-${AGY_HUB_EXEC_ID}_cli-${AGY_CLI_VERSION}-${AGY
 INSTALLED_STAMP=$(cat "$BIN_DIR/.antigravity_version" 2>/dev/null || echo "none")
 
 if [ "${FORCE_BINARY_UPDATE:-false}" = "true" ] || [ "$INSTALLED_STAMP" != "$TARGET_STAMP" ] || [ ! -f "$BIN_DIR/language_server" ] || [ ! -f "$BIN_DIR/antigravity" ]; then
-  echo "Updating Antigravity 2.0 Core Components to ${AGY_HUB_VERSION} (${AGY_HUB_EXEC_ID}) & CLI ${AGY_CLI_VERSION}..."
+  echo "Updating Antigravity 2.0 Core Components to ${AGY_HUB_VERSION} (${AGY_HUB_EXEC_ID}) & CLI ${AGY_CLI_VERSION} (cryptographically verified)..."
   DL_TMP=$(mktemp -d /tmp/antigravity_2_0_dl.XXXXXX)
-  HUB_TARBALL_URL="https://storage.googleapis.com/antigravity-public/antigravity-hub/${AGY_HUB_VERSION}-${AGY_HUB_EXEC_ID}/linux-x64/Antigravity.tar.gz"
-  CLI_TARBALL_URL="https://storage.googleapis.com/antigravity-public/antigravity-cli/${AGY_CLI_VERSION}-${AGY_CLI_EXEC_ID}/linux-x64/cli_linux_x64.tar.gz"
+  HUB_TARBALL_PATH="$DL_TMP/Antigravity.tar.gz"
+  CLI_TARBALL_PATH="$DL_TMP/cli_linux_x64.tar.gz"
 
-  if curl -fSL --max-time 180 -o "$DL_TMP/Antigravity.tar.gz" "$HUB_TARBALL_URL"; then
-    tar -xzf "$DL_TMP/Antigravity.tar.gz" -C "$DL_TMP"
+  # Backup existing binaries for atomic rollback on extraction/verification failure (ACE-WS-01)
+  for bname in language_server antigravity webm_encoder; do
+    if [ -f "$BIN_DIR/$bname" ]; then
+      cp -p "$BIN_DIR/$bname" "$BIN_DIR/${bname}.prev" 2>/dev/null || true
+    fi
+  done
+
+  rollback_binaries() {
+    echo "⚠ Restoring previous Antigravity binaries from .prev backup..." >&2
+    for bname in language_server antigravity webm_encoder; do
+      if [ -f "$BIN_DIR/${bname}.prev" ]; then
+        mv -f "$BIN_DIR/${bname}.prev" "$BIN_DIR/$bname"
+      fi
+    done
+  }
+
+  HUB_VERIFIED="false"
+  if [ -f "$REPO_ROOT/scripts/verify_binary_pins.py" ]; then
+    if python3 -B "$REPO_ROOT/scripts/verify_binary_pins.py" --mode hub \
+        --version "$AGY_HUB_VERSION" --exec-id "$AGY_HUB_EXEC_ID" \
+        --dest "$HUB_TARBALL_PATH" \
+        ${AGY_HUB_TARBALL_SHA256:+--expected-sha256 "$AGY_HUB_TARBALL_SHA256"}; then
+      HUB_VERIFIED="true"
+    else
+      echo "✖ Antigravity Hub tarball failed host-allowlist or digest verification." >&2
+    fi
+  fi
+
+  if [ "$HUB_VERIFIED" = "true" ]; then
+    if ! tar -xzf "$HUB_TARBALL_PATH" -C "$DL_TMP"; then
+      rollback_binaries
+      rm -rf "$DL_TMP"
+      exit 1
+    fi
     if [ -f "$DL_TMP/Antigravity-x64/resources/bin/language_server" ]; then
       install -o "$RUN_USER" -g "$RUN_USER" -m 0755 "$DL_TMP/Antigravity-x64/resources/bin/language_server" "$BIN_DIR/language_server"
       install -m 0755 "$DL_TMP/Antigravity-x64/resources/bin/language_server" /opt/antigravity/bin/language_server
@@ -134,20 +170,32 @@ if [ "${FORCE_BINARY_UPDATE:-false}" = "true" ] || [ "$INSTALLED_STAMP" != "$TAR
       cp -r "$DL_TMP/Antigravity-x64/resources/app.asar.unpacked/node_modules/chrome-devtools-mcp" "$BIN_DIR/chrome-devtools-mcp"
       chown -R "$RUN_USER:$RUN_USER" "$BIN_DIR/chrome-devtools-mcp"
     fi
-    echo "✅ Extracted Antigravity 2.0 Hub (${AGY_HUB_VERSION}) language_server, webm_encoder, and chrome-devtools-mcp."
+    echo "✅ Verified & extracted Antigravity 2.0 Hub (${AGY_HUB_VERSION}) language_server, webm_encoder, and chrome-devtools-mcp."
   elif [ -f "$REPO_ROOT/bin/language_server" ]; then
     echo "Fallback: Installing language_server from repository cache..."
     install -o "$RUN_USER" -g "$RUN_USER" -m 0755 "$REPO_ROOT/bin/language_server" "$BIN_DIR/language_server"
     install -m 0755 "$REPO_ROOT/bin/language_server" /opt/antigravity/bin/language_server
+  else
+    rollback_binaries
+    rm -rf "$DL_TMP"
+    exit 1
   fi
 
-  if curl -fSL --max-time 90 -o "$DL_TMP/cli_linux_x64.tar.gz" "$CLI_TARBALL_URL"; then
-    tar -xzf "$DL_TMP/cli_linux_x64.tar.gz" -C "$DL_TMP"
-    if [ -f "$DL_TMP/antigravity" ]; then
+  if [ -f "$REPO_ROOT/scripts/verify_binary_pins.py" ] && python3 -B "$REPO_ROOT/scripts/verify_binary_pins.py" --mode cli --dest "$CLI_TARBALL_PATH"; then
+    if tar -xzf "$CLI_TARBALL_PATH" -C "$DL_TMP" && [ -f "$DL_TMP/antigravity" ]; then
       install -o "$RUN_USER" -g "$RUN_USER" -m 0755 "$DL_TMP/antigravity" "$BIN_DIR/antigravity"
       install -m 0755 "$DL_TMP/antigravity" /usr/local/bin/antigravity
-      echo "✅ Extracted Antigravity 2.0 Standalone CLI (${AGY_CLI_VERSION}) to /usr/local/bin/antigravity."
+      echo "✅ SHA-512 verified & extracted Antigravity 2.0 Standalone CLI (${AGY_CLI_VERSION}) to /usr/local/bin/antigravity."
+    else
+      rollback_binaries
+      rm -rf "$DL_TMP"
+      exit 1
     fi
+  else
+    echo "✖ Antigravity CLI failed official SHA-512 manifest verification." >&2
+    rollback_binaries
+    rm -rf "$DL_TMP"
+    exit 1
   fi
 
   # Mirror official Antigravity 2.0 Web UI assets & record cryptographic version manifest
@@ -159,6 +207,7 @@ if [ "${FORCE_BINARY_UPDATE:-false}" = "true" ] || [ "$INSTALLED_STAMP" != "$TAR
 
   echo "$TARGET_STAMP" > "$BIN_DIR/.antigravity_version"
   chown "$RUN_USER:$RUN_USER" "$BIN_DIR/.antigravity_version"
+  rm -f "$BIN_DIR/"*.prev 2>/dev/null || true
   rm -rf "$DL_TMP"
 else
   echo "Antigravity 2.0 Core Components already up-to-date ($INSTALLED_STAMP)."
@@ -197,7 +246,7 @@ if os.path.isfile(cli_path):
         pass
 
 manifest = {
-    "hub_version": "3.9.0",
+    "hub_version": "3.10.0",
     "antigravity_core_version": "$AGY_HUB_VERSION",
     "antigravity_execution_id": "$AGY_HUB_EXEC_ID",
     "antigravity_cli_version": cli_ver or "$AGY_CLI_VERSION",
@@ -567,7 +616,7 @@ fi
 mkdir -p "$RUN_HOME/.gemini/config"
 touch "$RUN_HOME/.gemini/config/.migrated"
 chown -R "$RUN_USER:$RUN_USER" "$RUN_HOME/.gemini" "$RUN_HOME/.agents" /mnt/data/projects 2>/dev/null || true
-sudo -u "$RUN_USER" env HOME="$RUN_HOME" GOOGLE_CLOUD_PROJECT="$PROJECT_ID" python3 "$BIN_DIR/ccpa_mock.py" --seed-oauth-token 2>/dev/null || true
+sudo -u "$RUN_USER" env HOME="$RUN_HOME" GOOGLE_CLOUD_PROJECT="$GOOGLE_CLOUD_PROJECT" python3 "$BIN_DIR/ccpa_mock.py" --seed-oauth-token 2>/dev/null || true
 
 # ---- 6. Bypass Onboarding Screen with antigravity_state.pbtxt & Enforce Gemini 4 Argon (354) Default ----
 echo "Checking onboarding state and enforcing Gemini 4 Argon (354) default..."
@@ -603,11 +652,17 @@ if command -v nginx >/dev/null 2>&1; then
   nginx -t && systemctl restart nginx
 fi
 
-# ---- 8. Configure Nightly Dreaming & SQLite WAL Maintenance Crontabs ----
+# ---- 8. Configure Nightly Dreaming, SQLite WAL & Opt-In Idle Watchdog Crontabs ----
 echo "Configuring automatic SQLite WAL and Nightly Dreaming (23:50 UTC) crontab..."
-(sudo -u "$RUN_USER" crontab -l 2>/dev/null | grep -v "dreaming_engine.py" | grep -v "ensure_wal.py" || true; \
+if [ -f "scripts/idle_watchdog.py" ]; then
+  install -o "$RUN_USER" -g "$RUN_USER" -m 0755 scripts/idle_watchdog.py "$BIN_DIR/idle_watchdog.py"
+fi
+(sudo -u "$RUN_USER" crontab -l 2>/dev/null | grep -v "dreaming_engine.py" | grep -v "ensure_wal.py" | grep -v "idle_watchdog.py" || true; \
  echo "* * * * * python3 $BIN_DIR/ensure_wal.py > /dev/null 2>&1"; \
- echo "50 23 * * * python3 $BIN_DIR/knowledge_graph/dreaming_engine.py --hours 24 >> /tmp/dreaming.log 2>&1") | sudo -u "$RUN_USER" crontab -
+ echo "50 23 * * * python3 $BIN_DIR/knowledge_graph/dreaming_engine.py --hours 24 >> /tmp/dreaming.log 2>&1"; \
+ if [ "${IDLE_SUSPEND_MINUTES:-0}" -gt 0 ] 2>/dev/null; then \
+   echo "*/15 * * * * python3 $BIN_DIR/idle_watchdog.py --threshold-minutes ${IDLE_SUSPEND_MINUTES} --apply >> /tmp/idle_watchdog.log 2>&1"; \
+ fi) | sudo -u "$RUN_USER" crontab -
 
 # ---- 9. Systemd Service Configuration ----
 killall -9 language_server webm_encoder 2>/dev/null || true

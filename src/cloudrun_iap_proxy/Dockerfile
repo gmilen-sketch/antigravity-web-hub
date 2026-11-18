@@ -1,0 +1,10 @@
+FROM nginx:1.27-alpine
+
+COPY nginx.conf.template /etc/nginx/templates/default.conf.template
+
+ENV PORT=8080
+ENV UPSTREAM_HOST=127.0.0.1
+ENV UPSTREAM_PORT=8080
+ENV NGINX_ENVSUBST_FILTER="^(PORT|UPSTREAM_HOST|UPSTREAM_PORT)$"
+
+EXPOSE 8080

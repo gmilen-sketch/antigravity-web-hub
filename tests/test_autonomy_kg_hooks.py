@@ -537,12 +537,14 @@ class TestAutonomyKGHooks(unittest.TestCase):
         self.assertIn("<autonomy_session_context>", telemetry["injected_system_context"])
 
     def test_22_antigravity_2_0_core_upgrade_and_version_api(self):
-        """Verifies Antigravity 2.0 (2.24.0 Hub + 1.3.3 CLI + /healthz + /api/version + Claude Fable 5) support."""
+        """Verifies Antigravity 2.0 (verified Hub + CLI + /healthz + /api/version + Claude Fable 5) support."""
         import pathlib
         install_txt = pathlib.Path(REPO_ROOT, "scripts", "install.sh").read_text(encoding="utf-8")
+        pins_txt = pathlib.Path(REPO_ROOT, "scripts", "verify_binary_pins.py").read_text(encoding="utf-8")
         self.assertIn("antigravity-hub-auto-updater-974169037036.us-central1.run.app/releases", install_txt)
-        self.assertIn("storage.googleapis.com/antigravity-public/antigravity-hub", install_txt)
-        self.assertIn("storage.googleapis.com/antigravity-public/antigravity-cli", install_txt)
+        self.assertIn("verify_binary_pins.py", install_txt)
+        self.assertIn("storage.googleapis.com/antigravity-public/antigravity-hub", pins_txt)
+        self.assertIn("storage.googleapis.com/antigravity-public/antigravity-cli", pins_txt)
         self.assertIn("antigravity.static.usercontent.goog/web/", install_txt)
         self.assertNotIn("1.16.5-6703236727046144", install_txt)
 
@@ -689,7 +691,7 @@ class TestAutonomyKGHooks(unittest.TestCase):
         self.assertEqual(cleaned["generationConfig"]["thinkingConfig"]["thinkingLevel"], "HIGH")
 
         p_manifest = json.loads(pathlib.Path(REPO_ROOT, ".antigravity-plugin", "plugin.json").read_text(encoding="utf-8"))
-        self.assertEqual(p_manifest["version"], "3.9.0")
+        self.assertEqual(p_manifest["version"], "3.10.0")
 
     def test_29_dreaming_pipeline_e2e_6_scenarios_and_runtime_guards(self):
         """Verifies Issue #1 6-scenario E2E Dreaming & Anti-Overfitting lifecycle and runtime livelock/OOM guards."""
@@ -968,14 +970,14 @@ class TestAutonomyKGHooks(unittest.TestCase):
         import ccpa_mock
 
         install_txt = pathlib.Path(REPO_ROOT, "scripts", "install.sh").read_text(encoding="utf-8")
-        self.assertIn('DEFAULT_AGY_HUB_VERSION="2.29.1"', install_txt)
-        self.assertIn('DEFAULT_AGY_CLI_VERSION="1.5.3"', install_txt)
+        self.assertIn('DEFAULT_AGY_HUB_VERSION="2.33.0"', install_txt)
+        self.assertIn('DEFAULT_AGY_CLI_VERSION="1.5.11"', install_txt)
         self.assertIn("isinstance(d, list)", install_txt)
-        self.assertEqual(pathlib.Path(REPO_ROOT, "VERSION").read_text(encoding="utf-8").strip(), "3.9.0")
+        self.assertEqual(pathlib.Path(REPO_ROOT, "VERSION").read_text(encoding="utf-8").strip(), "3.10.0")
 
         for rel_manifest in ("plugin.json", ".antigravity-plugin/plugin.json"):
             m = json.loads(pathlib.Path(REPO_ROOT, rel_manifest).read_text(encoding="utf-8"))
-            self.assertEqual(m["version"], "3.9.0")
+            self.assertEqual(m["version"], "3.10.0")
             self.assertEqual(m["category"], "automation")
             self.assertEqual(m["hooks"], "hooks.json")
 
@@ -1623,6 +1625,47 @@ class TestAutonomyKGHooks(unittest.TestCase):
         finally:
             BRAIN_CANDIDATE_ROOTS[:] = orig_roots
             shutil.rmtree(tmp_brain, ignore_errors=True)
+
+    def test_41_ace_ws_security_ingress_and_cost_kernels(self):
+        """Verifies ACE-WS-01..06 slim kernels: binary digest/host verifier, least-privilege IAM/egress TF, static infra gate, Cloud Run Direct IAP, zone preflight, idle watchdog, and install.sh OAuth fix."""
+        import pathlib
+        sys.path.insert(0, os.path.join(REPO_ROOT, "scripts"))
+        import verify_binary_pins
+        import preflight_zone_check
+        import idle_watchdog
+        from hooks.black_hat_analyzer import audit_infra_static_security_parity, scan_target
+
+        # ACE-WS-01: Host allowlist & SHA-512/256 verification
+        self.assertEqual(verify_binary_pins._self_test(), 0)
+        with self.assertRaises(ValueError):
+            verify_binary_pins.validate_release_url("https://untrusted.example.com/Antigravity.tar.gz")
+
+        # ACE-WS-02 & ACE-WS-04 & ACE-WS-06: Terraform controls
+        tf_txt = pathlib.Path(REPO_ROOT, "terraform", "main.tf").read_text(encoding="utf-8")
+        self.assertNotIn("google_compute_default_service_account", tf_txt)
+        self.assertIn('resource "google_service_account" "hub_runtime"', tf_txt)
+        self.assertIn("private_ip_google_access = true", tf_txt)
+        self.assertIn('resource "google_dns_managed_zone" "pga_googleapis"', tf_txt)
+        self.assertIn('resource "google_compute_network_firewall_policy" "egress_allowlist"', tf_txt)
+        self.assertIn("iap_enabled  = true", tf_txt)
+        self.assertIn('resource "google_compute_resource_policy" "idle_schedule"', tf_txt)
+
+        # ACE-WS-03: Static security parity gate passes cleanly across repo
+        self.assertEqual(audit_infra_static_security_parity(REPO_ROOT), [])
+        scan_res = scan_target(REPO_ROOT)
+        self.assertEqual(scan_res["verdict"], "PASS", f"Clean-room / infra parity failed: {scan_res}")
+
+        # ACE-WS-05: Multi-zone capacity & quota preflight
+        self.assertEqual(preflight_zone_check._self_test(), 0)
+
+        # ACE-WS-06: Stream-aware idle watchdog
+        self.assertEqual(idle_watchdog._self_test(), 0)
+
+        # Bonus fix: install.sh uses $GOOGLE_CLOUD_PROJECT (not unbound $PROJECT_ID)
+        inst_txt = pathlib.Path(REPO_ROOT, "scripts", "install.sh").read_text(encoding="utf-8")
+        self.assertNotIn('GOOGLE_CLOUD_PROJECT="$PROJECT_ID"', inst_txt)
+        self.assertIn('GOOGLE_CLOUD_PROJECT="$GOOGLE_CLOUD_PROJECT"', inst_txt)
+        self.assertIn("verify_binary_pins.py", inst_txt)
 
     @classmethod
     def tearDownClass(cls):

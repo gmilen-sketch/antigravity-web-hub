@@ -15,6 +15,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 from typing import Any, Dict, List
 
@@ -157,12 +158,66 @@ def scan_ast_silent_fallbacks(source_code: str, filename: str = "<memory>") -> L
     return issues
 
 
+def audit_infra_static_security_parity(repo_root: str) -> List[str]:
+    """Static security & configuration parity gate across Terraform, Nginx, and installer scripts (ACE-WS-03)."""
+    findings: List[str] = []
+    if not os.path.isdir(repo_root):
+        return findings
+
+    tf_path = os.path.join(repo_root, "terraform", "main.tf")
+    if os.path.isfile(tf_path):
+        with open(tf_path, "r", encoding="utf-8", errors="ignore") as fh:
+            tf_txt = fh.read()
+        if "google_compute_default_service_account" in tf_txt:
+            findings.append(f"{tf_path}: Forbidden default Compute Engine service account binding")
+        if "google_service_account" not in tf_txt:
+            findings.append(f"{tf_path}: Missing dedicated least-privilege runtime service account")
+        for req in ("enable_secure_boot", "enable_vtpm", "enable_integrity_monitoring", "private_ip_google_access", 'enable-oslogin = "TRUE"'):
+            if req not in tf_txt:
+                findings.append(f"{tf_path}: Missing required security control '{req}'")
+        if re.search(r"\baccess_config\s*\{", tf_txt):
+            findings.append(f"{tf_path}: Public VM external IP (access_config) violates zero-public-IP policy")
+
+    nginx_path = os.path.join(repo_root, "config", "nginx.conf")
+    if os.path.isfile(nginx_path):
+        with open(nginx_path, "r", encoding="utf-8", errors="ignore") as fh:
+            ngx_txt = fh.read()
+        if "127.0.0.1:8081" not in ngx_txt:
+            findings.append(f"{nginx_path}: Missing mandatory localhost Host rewrite for language_server (:8081)")
+        if "Content-Security-Policy" not in ngx_txt:
+            findings.append(f"{nginx_path}: Missing Content-Security-Policy frame-ancestors header")
+        if "add_header Access-Control-Allow-Origin" in ngx_txt and "proxy_hide_header Access-Control-Allow-Origin" not in ngx_txt:
+            findings.append(f"{nginx_path}: Duplicate CORS risk — add_header Access-Control-Allow-Origin requires proxy_hide_header")
+
+    install_path = os.path.join(repo_root, "scripts", "install.sh")
+    if os.path.isfile(install_path):
+        with open(install_path, "r", encoding="utf-8", errors="ignore") as fh:
+            inst_txt = fh.read()
+        if "verify_binary_pins.py" not in inst_txt:
+            findings.append(f"{install_path}: Missing pre-extract cryptographic binary verification (verify_binary_pins.py)")
+        if 'GOOGLE_CLOUD_PROJECT="$PROJECT_ID"' in inst_txt:
+            findings.append(f"{install_path}: Unbound $PROJECT_ID passed to --seed-oauth-token (use $GOOGLE_CLOUD_PROJECT)")
+
+    scripts_dir = os.path.join(repo_root, "scripts")
+    if os.path.isdir(scripts_dir):
+        for fname in sorted(os.listdir(scripts_dir)):
+            if not fname.endswith(".sh"):
+                continue
+            sp = os.path.join(scripts_dir, fname)
+            chk = subprocess.run(["bash", "-n", sp], capture_output=True, text=True, timeout=10)
+            if chk.returncode != 0:
+                findings.append(f"{sp}: bash -n syntax error: {(chk.stderr or chk.stdout).strip()}")
+
+    return findings
+
+
 def scan_target(target_path: str) -> Dict[str, Any]:
     py_files_checked = 0
     json_files_checked = 0
     syntax_errors: List[str] = []
     path_leaks: List[str] = []
     silent_fallbacks: List[str] = []
+    infra_security_findings: List[str] = []
 
     if os.path.isfile(target_path):
         files_to_scan = [target_path]
@@ -223,7 +278,10 @@ def scan_target(target_path: str) -> Dict[str, Any]:
                 if h in PROHIBITED_TOKEN_SHA256:
                     path_leaks.append(f"{fpath}: Prohibited token '{candidate}'")
 
-    verdict = "PASS" if (not syntax_errors and not path_leaks) else "FAIL"
+    if os.path.isdir(target_path):
+        infra_security_findings = audit_infra_static_security_parity(target_path)
+
+    verdict = "PASS" if (not syntax_errors and not path_leaks and not infra_security_findings) else "FAIL"
     return {
         "verdict": verdict,
         "py_files_checked": py_files_checked,
@@ -232,6 +290,7 @@ def scan_target(target_path: str) -> Dict[str, Any]:
         "syntax_errors": syntax_errors,
         "path_leaks": path_leaks,
         "silent_fallbacks": silent_fallbacks,
+        "infra_security_findings": infra_security_findings,
     }
 
 

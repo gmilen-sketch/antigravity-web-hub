@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-shot orchestrator: VM → LB → IAP → VM-side install.
+# One-shot orchestrator: VM -> Ingress (Classic LB or Cloud Run Direct IAP) -> VM-side install.
 # Requires .env and `gcloud auth login` on the workstation running this.
 # Idempotent — safe to re-run any stage.
 set -euo pipefail
@@ -12,11 +12,16 @@ set -a; . ./.env; set +a
 : "${GOOGLE_CLOUD_PROJECT:?}"
 : "${VM_NAME:?}"
 : "${VM_ZONE:?}"
-export IAP_USERS="${IAP_USERS:-user:$(gcloud config get-value account 2>/dev/null || echo 'admin@example.com')}"
 
+ACTIVE_ACCT="$(gcloud config get-value account 2>/dev/null || true)"
+export CLOUDSDK_CORE_ACCOUNT="${SSH_USER:-${GCP_ACCOUNT:-${ACTIVE_ACCT:?set GCP_ACCOUNT or run gcloud auth login}}}"
+export IAP_USERS="${IAP_USERS:-user:${CLOUDSDK_CORE_ACCOUNT}}"
+NAME_PREFIX="${NAME_PREFIX:-antigravity-web}"
+INGRESS_MODE="${INGRESS_MODE:-classic_lb}"
 
 # Auto-detect actual VM zone if instance already exists in GCP
-DETECTED_ZONE=$(gcloud --quiet --project="$GOOGLE_CLOUD_PROJECT" compute instances list --filter="name=$VM_NAME" --format="value(zone)" 2>/dev/null | head -n 1 || true)
+DETECTED_ZONE=$(gcloud --quiet --project="$GOOGLE_CLOUD_PROJECT" compute instances list \
+  --filter="name=$VM_NAME" --format="value(zone)" 2>/dev/null | head -n 1 || true)
 if [ -n "$DETECTED_ZONE" ]; then
   VM_ZONE="$DETECTED_ZONE"
 fi
@@ -26,17 +31,30 @@ ENABLE_RESEARCH="${ENABLE_DEEP_RESEARCH:-true}"
 ENABLE_WORKSPACE="${ENABLE_WORKSPACE_MCP:-true}"
 
 echo "===== Antigravity Web Hub Module Setup ====="
-echo "  [✓] Core Web Hub & Vertex AI Routing (Default)"
+echo "  [✓] Core Web Hub & Vertex AI Routing (Ingress: ${INGRESS_MODE})"
 echo "  [$([ "$ENABLE_KG" = "true" ] && echo "✓" || echo " ")] Knowledge Graph Long-Term Memory (0ms cache & context injection)"
 echo "  [$([ "$ENABLE_RESEARCH" = "true" ] && echo "✓" || echo " ")] On-Demand Deep Research FastMCP Server"
 echo "  [$([ "$ENABLE_WORKSPACE" = "true" ] && echo "✓" || echo " ")] Native Google Workspace MCP Server"
 echo "============================================"
 
-echo "===== 1/3  Create VM (skips if exists) ====="
+echo "===== 1/3  Create VM (preflight zone + dedicated SA + skips if exists) ====="
 "$HERE/gcp_setup_vm.sh"
 
-echo "===== 2/3  Provision LB + IAP ====="
-"$HERE/gcp_setup_lb.sh"
+# Re-source .env in case ACE-WS-05 zone preflight updated VM_ZONE
+set -a; . ./.env; set +a
+DETECTED_ZONE=$(gcloud --quiet --project="$GOOGLE_CLOUD_PROJECT" compute instances list \
+  --filter="name=$VM_NAME" --format="value(zone)" 2>/dev/null | head -n 1 || true)
+if [ -n "$DETECTED_ZONE" ]; then
+  VM_ZONE="$DETECTED_ZONE"
+fi
+REGION="${VM_ZONE%-*}"
+
+echo "===== 2/3  Provision Ingress (${INGRESS_MODE}) ====="
+if [ "$INGRESS_MODE" = "cloud_run_direct_iap" ]; then
+  "$HERE/gcp_setup_cloudrun_iap.sh"
+else
+  "$HERE/gcp_setup_lb.sh"
+fi
 
 gcloud_retry() {
   local retries=5
@@ -46,69 +64,48 @@ gcloud_retry() {
     if [ $count -ge $retries ]; then
       return 1
     fi
-    echo "gcloud command failed — retrying ($count/$retries) in 3s..."
-    pkill -9 -f "gcloud" 2>/dev/null || true
-    pkill -9 -f "ecp" 2>/dev/null || true
-    sleep 3
+    echo "gcloud command failed — retrying ($count/$retries) in 5s..."
+    sleep 5
   done
 }
 
-echo "===== 3/3  Install hub on VM (via SSH-over-IAP) ====="
+echo "===== 3/3  Install hub on VM (via SSH-over-IAP; verified CDN binaries on VM) ====="
 REMOTE_DIR="/tmp/antigravity-web-hub"
 TAR_FILE="/tmp/antigravity-hub-deploy.tar.gz"
 
-# Ensure language_server binary is packaged from local workstation or downloaded from Google CDN
-if [ ! -f "$REPO_ROOT/bin/language_server" ]; then
-  LOCAL_SERVER=""
-  if [ -f "/tmp/antigravity-web-hub/bin/language_server" ]; then
-    LOCAL_SERVER="/tmp/antigravity-web-hub/bin/language_server"
-  elif [ -f "$HOME/.gemini/antigravity/bin/language_server" ]; then
-    LOCAL_SERVER="$HOME/.gemini/antigravity/bin/language_server"
-  fi
-  if [ -n "$LOCAL_SERVER" ]; then
-    echo "→ Found local language_server binary at $LOCAL_SERVER — copying into deployment package..."
-    mkdir -p "$REPO_ROOT/bin"
-    cp "$LOCAL_SERVER" "$REPO_ROOT/bin/language_server"
-    chmod 0755 "$REPO_ROOT/bin/language_server"
-  else
-    echo "→ No local language_server found. Downloading official Antigravity binary from Google CDN..."
-    mkdir -p "$REPO_ROOT/bin" /tmp/antigravity_dl
-    curl -s -o /tmp/antigravity_dl/Antigravity.tar.gz https://edgedl.me.gvt1.com/edgedl/release2/j0qc3/antigravity/stable/1.16.5-6703236727046144/linux-x64/Antigravity.tar.gz
-    tar -xzf /tmp/antigravity_dl/Antigravity.tar.gz -C /tmp/antigravity_dl Antigravity/resources/app/extensions/antigravity/bin/language_server_linux_x64
-    mv /tmp/antigravity_dl/Antigravity/resources/app/extensions/antigravity/bin/language_server_linux_x64 "$REPO_ROOT/bin/language_server"
-    chmod 0755 "$REPO_ROOT/bin/language_server"
-    rm -rf /tmp/antigravity_dl
-    echo "→ Successfully extracted official language_server binary to $REPO_ROOT/bin/language_server"
-  fi
-fi
+echo "→ Packaging clean repository into $TAR_FILE..."
+tar --exclude='.git' --exclude='venv' --exclude='node_modules' --exclude='bin' -czf "$TAR_FILE" -C "$REPO_ROOT" .
 
-
-
-echo "→ Packaging repository into $TAR_FILE..."
-tar --exclude='.git' --exclude='venv' --exclude='node_modules' -czf "$TAR_FILE" -C "$REPO_ROOT" .
-
-
-echo "→ Transferring archive to VM..."
-gcloud_retry gcloud --quiet --project=$GOOGLE_CLOUD_PROJECT compute ssh $VM_NAME --zone=$VM_ZONE --tunnel-through-iap \
+echo "→ Waiting for SSH-over-IAP readiness & transferring archive to VM ($VM_NAME in $VM_ZONE)..."
+gcloud_retry gcloud --quiet --project="$GOOGLE_CLOUD_PROJECT" compute ssh "$VM_NAME" --zone="$VM_ZONE" --tunnel-through-iap \
+  --ssh-flag="-o StrictHostKeyChecking=no" \
   --command="rm -rf $REMOTE_DIR && mkdir -p $REMOTE_DIR"
 
-gcloud_retry gcloud --quiet --project=$GOOGLE_CLOUD_PROJECT compute scp --tunnel-through-iap --zone=$VM_ZONE \
+gcloud_retry gcloud --quiet --project="$GOOGLE_CLOUD_PROJECT" compute scp --tunnel-through-iap --zone="$VM_ZONE" \
+  --scp-flag="-o StrictHostKeyChecking=no" \
   "$TAR_FILE" "$VM_NAME:/tmp/hub.tar.gz"
 
-echo "→ Unpacking archive & running installer on VM..."
-if [ -f "$HOME/.config/gcloud/application_default_credentials.json" ]; then
+if [ "${TRANSFER_WORKSTATION_ADC:-false}" = "true" ] && [ -f "$HOME/.config/gcloud/application_default_credentials.json" ]; then
   echo "→ Transferring workstation Application Default Credentials (ADC) to VM..."
-  gcloud_retry gcloud --quiet --project=$GOOGLE_CLOUD_PROJECT compute ssh $VM_NAME --zone=$VM_ZONE --tunnel-through-iap \
+  gcloud_retry gcloud --quiet --project="$GOOGLE_CLOUD_PROJECT" compute ssh "$VM_NAME" --zone="$VM_ZONE" --tunnel-through-iap \
+    --ssh-flag="-o StrictHostKeyChecking=no" \
     --command="mkdir -p ~/.config/gcloud"
-  gcloud_retry gcloud --quiet --project=$GOOGLE_CLOUD_PROJECT compute scp --tunnel-through-iap --zone=$VM_ZONE \
+  gcloud_retry gcloud --quiet --project="$GOOGLE_CLOUD_PROJECT" compute scp --tunnel-through-iap --zone="$VM_ZONE" \
+    --scp-flag="-o StrictHostKeyChecking=no" \
     "$HOME/.config/gcloud/application_default_credentials.json" "$VM_NAME:~/.config/gcloud/application_default_credentials.json"
 fi
 
-gcloud_retry gcloud --quiet --project=$GOOGLE_CLOUD_PROJECT compute ssh $VM_NAME --zone=$VM_ZONE --tunnel-through-iap \
+echo "→ Unpacking archive & running verified installer on VM..."
+gcloud_retry gcloud --quiet --project="$GOOGLE_CLOUD_PROJECT" compute ssh "$VM_NAME" --zone="$VM_ZONE" --tunnel-through-iap \
+  --ssh-flag="-o StrictHostKeyChecking=no" \
   --command="tar -xzf /tmp/hub.tar.gz -C $REMOTE_DIR && cd $REMOTE_DIR && sudo -E bash scripts/install.sh"
-
 
 echo
 echo "===== DONE ====="
-echo "Browse: https://$(gcloud --project=$GOOGLE_CLOUD_PROJECT compute addresses describe antigravity-web-ip --global --format='value(address)').nip.io/"
-echo "(Google-managed SSL cert takes up to ~15 min to provision on first setup.)"
+if [ "$INGRESS_MODE" = "cloud_run_direct_iap" ]; then
+  PROXY_URL=$(gcloud --quiet --project="$GOOGLE_CLOUD_PROJECT" run services describe "${NAME_PREFIX}-proxy" --region="$REGION" --format='value(status.url)' 2>/dev/null || echo "")
+  echo "Browse (Cloud Run Direct IAP): ${PROXY_URL}/"
+else
+  echo "Browse: https://$(gcloud --project="$GOOGLE_CLOUD_PROJECT" compute addresses describe "${NAME_PREFIX}-ip" --global --format='value(address)').nip.io/"
+  echo "(Google-managed SSL cert takes up to ~15 min to provision on first setup.)"
+fi
