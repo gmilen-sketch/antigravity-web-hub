@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.10.0] - 2026-11-18 — 🛡️ Core 2.33.0 + CLI 1.5.11, Supply-Chain Pinning, Least-Privilege IAM/FQDN Egress, Cloud Run Direct IAP, Zone Preflight & Cost Governance
+
+### 🔒 Supply-Chain, IAM & Static Security Hardening (`ACE-WS-01`, `ACE-WS-02`, `ACE-WS-03`)
+- **Pre-Extract Cryptographic Binary Verification & Atomic Rollback (`scripts/verify_binary_pins.py`, `scripts/install.sh`)**: Enforces allowlisted HTTPS download hosts, SHA-512 manifest verification for `antigravity` CLI (`1.5.11`), GCS `x-goog-hash` MD5 and optional SHA-256 verification for Hub tarballs (`2.33.0`), Python 3.11-compatible release JSON parsing, `$GOOGLE_CLOUD_PROJECT` OAuth seeding fix, and `.prev` atomic rollback.
+- **Dedicated Least-Privilege Runtime SA, PGA Private DNS & Opt-In FQDN Egress Policy (`terraform/main.tf`, `terraform/variables.tf`, `scripts/gcp_setup_vm.sh`)**: Replaces the default Compute Engine service account with dedicated `${NAME_PREFIX}-runtime` SA (`roles/aiplatform.user`, `roles/logging.logWriter`, `roles/monitoring.metricWriter`, `roles/bigquery.jobUser`), enables subnet Private Google Access + `199.36.153.8/30` private DNS, adds lateral VM-to-VM deny firewall, and adds opt-in priority-`65000` default-deny Network Firewall Policy with allowlisted FQDNs.
+- **Static IaC & Config Security Parity Gate (`src/hooks/black_hat_analyzer.py`, `tests/test_autonomy_kg_hooks.py`)**: Adds `audit_infra_static_security_parity()` verifying `terraform/main.tf`, `config/nginx.conf`, and `scripts/*.sh` (`bash -n`), plus `test_41_ace_ws_security_ingress_and_cost_kernels` (`41/41` unit tests passing).
+
+### 🚀 Zero-OAuth Ingress, Provisioning Resilience & FinOps (`ACE-WS-04`, `ACE-WS-05`, `ACE-WS-06`)
+- **Optional Cloud Run v2 Direct IAP Ingress (`src/cloudrun_iap_proxy/`, `scripts/gcp_setup_cloudrun_iap.sh`, `scripts/bootstrap_all.sh`, `terraform/main.tf`)**: Adds `INGRESS_MODE=cloud_run_direct_iap` fronting the private VM over Direct VPC Egress using a dedicated runtime SA and `NGINX_ENVSUBST_FILTER`-protected Nginx streaming proxy (`iap_enabled = true`, `3,600s` timeout), eliminating manual Custom OAuth Client setup (`Error 604`) and 15-minute SSL waits while retaining Classic HTTPS LB (`86,400s` timeout) for multi-hour streams.
+- **Multi-Zone Quota/Stockout Preflight (`scripts/preflight_zone_check.py`, `scripts/gcp_setup_vm.sh`)**: Queries Compute Engine regional quotas and zonal machine-type stock with `X-Goog-User-Project` header and automatically fails over across fallback zones before VM creation.
+- **Automated Idle Cost Governance & Complete Teardown (`scripts/idle_watchdog.py`, `terraform/main.tf`, `scripts/gcp_destroy.sh`)**: Adds opt-in GCE `vm_start_stop_schedule`, stream-aware idle auto-stop cron watchdog, and parameterized 10-stage clean teardown (`--clear-network` Direct VPC Egress detach).
+
+---
+
 ## [3.9.0] - 2026-11-10 — 🚀 Core 2.29.1 + CLI 1.5.3, 100% Zero-Mock Native `:8081` Execution, 4-Hook Autonomy Suite (`v4.18` Adaptive Goldfish Wave + `PostInvocation` UX) & Clean-Room Certification
 
 ### 🚀 Platform, Native `:8081` Execution & Model Catalog Upgrades (`A1`, `A2`)
