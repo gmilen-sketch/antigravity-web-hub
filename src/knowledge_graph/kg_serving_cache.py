@@ -7,9 +7,12 @@ Filters out provisional (`status == 'PROVISIONAL'`) and expired (`decayed_confid
 """
 import json
 import os
+import sys
 import tempfile
 import time
 from typing import Any, Dict, List
+
+sys.dont_write_bytecode = True
 
 WARM_CACHE_PATH = os.environ.get(
     "KG_WARM_CACHE_PATH",
@@ -36,6 +39,7 @@ def filter_servable_nodes(nodes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 def hydrate_serving_cache(graph_path: str, cache_path: str = WARM_CACHE_PATH) -> Dict[str, Any]:
     """Atomically writes the unified serving cache from graph_path."""
+    cache_path = cache_path or os.environ.get("KG_WARM_CACHE_PATH", WARM_CACHE_PATH)
     if not os.path.exists(graph_path):
         return {"status": "missing_source", "graph_path": graph_path}
 
@@ -45,13 +49,16 @@ def hydrate_serving_cache(graph_path: str, cache_path: str = WARM_CACHE_PATH) ->
     raw_nodes = graph.get("nodes", [])
     servable_nodes = filter_servable_nodes(raw_nodes)
 
+    edges = graph.get("edges", [])
     warm_data = {
         "version": graph.get("version", "2.0-OKF-v0.2"),
         "okf_version": "0.2",
         "updated_at": time.time(),
         "warmed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "nodes_count": len(servable_nodes),
+        "edges_count": len(edges),
         "nodes": servable_nodes,
-        "edges": graph.get("edges", []),
+        "edges": edges,
     }
 
     cache_dir = os.path.dirname(cache_path)

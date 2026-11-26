@@ -216,6 +216,38 @@ def _consume_reasoner_plan(
     return approved_patches
 
 
+def _kb_has_dossier_files(kb_dir: str) -> bool:
+    """Returns True when kb_dir contains at least one .md dossier beyond skeleton index/log/readme."""
+    if not kb_dir or not os.path.isdir(kb_dir):
+        return False
+    skeleton_names = {"index.md", "log.md", "readme.md"}
+    for root, _dirs, files in os.walk(kb_dir):
+        for fname in files:
+            if fname.lower().endswith(".md") and fname.lower() not in skeleton_names:
+                return True
+    return False
+
+
+def resolve_active_kb_dir(kb_root: Optional[str] = None) -> str:
+    """Resolves the active OKF kb/ directory, preferring populated user/runtime kb/ over empty plugin skeleton."""
+    explicit = (kb_root or os.environ.get("KG_KB_ROOT") or "").strip()
+    if explicit:
+        expanded = os.path.expanduser(explicit)
+        if os.path.isdir(expanded):
+            return expanded
+    kb_candidates = [
+        os.path.expanduser("~/.gemini/antigravity/kb"),
+        os.path.expanduser("~/kb"),
+        os.path.expanduser("~/.gemini/antigravity/bin/kb"),
+        os.path.join(REPO_ROOT, "kb"),
+        os.path.join(SRC_DIR, "kb"),
+    ]
+    for cand in kb_candidates:
+        if _kb_has_dossier_files(cand):
+            return cand
+    return next((c for c in kb_candidates if os.path.isdir(c)), kb_candidates[0])
+
+
 def run_dreaming_pipeline(
     lookback_hours: int = 24,
     graph_path: str = None,
@@ -226,6 +258,7 @@ def run_dreaming_pipeline(
     now_ts: Optional[float] = None,
     reasoner_plan_path: str = REASONER_PLAN_PATH,
     warm_cache_path: str = WARM_CACHE_PATH,
+    kb_root: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Master Dreaming v5.3 & Self-Optimization Orchestrator."""
     effective_now = now_ts if now_ts is not None else time.time()
@@ -428,14 +461,8 @@ def run_dreaming_pipeline(
             pass
 
     # 3. Synchronize Open Knowledge Format (OKF v0.2) Dossiers (`kb/`) into KG & Warm Cache
-    kb_candidates = [
-        os.path.join(REPO_ROOT, "kb"),
-        os.path.join(SRC_DIR, "kb"),
-        os.path.expanduser("~/kb"),
-        os.path.expanduser("~/.gemini/antigravity/bin/kb"),
-    ]
-    kb_dir = next((c for c in kb_candidates if os.path.isdir(c)), kb_candidates[0])
-    okf_res = sync_kb_to_graph(kb_root=kb_dir, graph_path=active_graph)
+    kb_dir = resolve_active_kb_dir(kb_root)
+    okf_res = sync_kb_to_graph(kb_root=kb_dir, graph_path=active_graph, cache_path=warm_cache_path)
 
     # 4. Emit Reasoning Payload for `dreaming-improvement-reasoner` Subagent
     reasoner_payload = {
@@ -447,14 +474,27 @@ def run_dreaming_pipeline(
         "rejected_by_patch_gate": rejected_by_patch_gate,
         "saboteur_benchmark": saboteur_res,
     }
+    reasoner_out_path = (
+        os.path.join(os.path.dirname(os.path.abspath(warm_cache_path)), "dreaming_improvements_for_reasoner.json")
+        if warm_cache_path
+        else REASONER_PAYLOAD_PATH
+    )
     try:
-        with open(REASONER_PAYLOAD_PATH, "w", encoding="utf-8") as rf:
+        with open(reasoner_out_path, "w", encoding="utf-8") as rf:
             json.dump(reasoner_payload, rf, indent=2)
     except Exception:
         pass
 
-    # 5. Workspace Hygiene Audit & Atomic RAM Cache Warming
+    # 5. Workspace Hygiene Audit, Kitagawa-Oaxaca Mix-Shift Attribution & Atomic RAM Cache Warming
     hygiene_res = audit_workspace_hygiene(REPO_ROOT)
+    friction_attribution = decompose_harness_friction_and_mix_shift(
+        tool_events=[
+            {"category": "harness_infra", "tokens": sum(e["errors"] * 120 for e in evals)},
+            {"category": "model_planning", "tokens": sum(e["tool_invocations"] * 40 for e in evals)},
+        ],
+        baseline_strata={"coding": {"weight": 0.5, "score": 92.0}, "arch": {"weight": 0.5, "score": 94.0}},
+        current_strata={"coding": {"weight": 0.6, "score": avg_score}, "arch": {"weight": 0.4, "score": avg_score}},
+    )
     warm_shared_memory_cache(active_graph, cache_path=warm_cache_path)
 
     summary_md = f"""# 🌙 Antigravity Customizations: Daily Dreaming Engine Briefing (v5.3)
@@ -487,10 +527,54 @@ def run_dreaming_pipeline(
         "okf_sync": okf_res,
         "saboteur_gate": saboteur_res,
         "workspace_hygiene": hygiene_res,
+        "friction_attribution": friction_attribution,
         "kg_optimization": kg_res,
         "warm_cache_path": warm_cache_path,
         "reasoner_payload_path": REASONER_PAYLOAD_PATH,
         "summary_file": summary_path,
+    }
+
+
+def decompose_harness_friction_and_mix_shift(
+    tool_events: List[Dict[str, Any]],
+    baseline_strata: Dict[str, Dict[str, float]],
+    current_strata: Dict[str, Dict[str, float]],
+) -> Dict[str, Any]:
+    """
+    AGW-W12-02: Dreaming Engine Harness-vs-Model Friction Attribution & Kitagawa-Oaxaca Mix-Shift Decomposer.
+    Separates infrastructure/harness friction tokens from model planning friction tokens, and decomposes
+    overall quality score delta into Pure Within-Task Quality Change vs. Task Mix-Shift Effect.
+    """
+    harness_tokens = 0
+    model_tokens = 0
+    for ev in tool_events or []:
+        cat = str(ev.get("category") or "")
+        toks = int(ev.get("tokens", 0))
+        if cat in ("harness_infra", "transport_timeout", "mcp_disconnect"):
+            harness_tokens += toks
+        else:
+            model_tokens += toks
+    total_toks = harness_tokens + model_tokens
+    harness_share = round(harness_tokens / float(total_toks), 4) if total_toks > 0 else 0.0
+
+    strata = sorted(set(baseline_strata.keys()) & set(current_strata.keys()))
+    within_task_effect = 0.0
+    mix_shift_effect = 0.0
+    for s in strata:
+        w0 = float(baseline_strata[s].get("weight", 0.0))
+        y0 = float(baseline_strata[s].get("score", 0.0))
+        w1 = float(current_strata[s].get("weight", 0.0))
+        y1 = float(current_strata[s].get("score", 0.0))
+        within_task_effect += 0.5 * (w0 + w1) * (y1 - y0)
+        mix_shift_effect += 0.5 * (y0 + y1) * (w1 - w0)
+
+    return {
+        "harness_friction_tokens": harness_tokens,
+        "model_friction_tokens": model_tokens,
+        "harness_friction_share": harness_share,
+        "within_task_quality_effect": round(within_task_effect, 4),
+        "task_mix_shift_effect": round(mix_shift_effect, 4),
+        "total_score_delta": round(within_task_effect + mix_shift_effect, 4),
     }
 
 

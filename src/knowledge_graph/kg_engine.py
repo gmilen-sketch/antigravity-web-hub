@@ -11,7 +11,7 @@ import json
 import time
 import sqlite3
 import logging
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [KG-ENGINE] %(message)s")
 
@@ -22,9 +22,10 @@ WARM_CACHE_PATH = os.environ.get("KG_WARM_CACHE_PATH", "/dev/shm/agw_kg_warm_cac
 class KnowledgeGraphEngine:
     def __init__(self, json_path: Optional[str] = None):
         self.json_path = json_path or (DEFAULT_KG_JSON if os.path.exists(os.path.dirname(DEFAULT_KG_JSON)) else FALLBACK_KG_JSON)
-        self.warm_cache_path = WARM_CACHE_PATH
+        self.warm_cache_path = os.environ.get("KG_WARM_CACHE_PATH", WARM_CACHE_PATH)
         self.nodes: Dict[str, Dict[str, Any]] = {}
         self.edges: List[Dict[str, Any]] = []
+        self._last_mtime: Tuple[str, float, str, float] = ("", -1.0, "", -1.0)
         self._load_graph()
 
     def _get_active_file(self) -> str:
@@ -34,20 +35,46 @@ class KnowledgeGraphEngine:
             return FALLBACK_KG_JSON
         return self.json_path
 
+    def _compute_mtime_snapshot(self) -> Tuple[str, float, str, float]:
+        cache_p = os.environ.get("KG_WARM_CACHE_PATH", self.warm_cache_path)
+        active_p = self._get_active_file()
+        try:
+            c_mtime = os.path.getmtime(cache_p) if cache_p and os.path.exists(cache_p) else -1.0
+        except OSError:
+            c_mtime = -1.0
+        try:
+            a_mtime = os.path.getmtime(active_p) if active_p and os.path.exists(active_p) else -1.0
+        except OSError:
+            a_mtime = -1.0
+        return (cache_p, c_mtime, active_p, a_mtime)
+
+    def _ensure_fresh(self) -> bool:
+        current_snap = self._compute_mtime_snapshot()
+        if current_snap != self._last_mtime:
+            self.warm_cache_path = current_snap[0]
+            self._load_graph()
+            return True
+        return False
+
     def _load_graph(self):
-        # 1. Try reading warm cache first for 0ms reads
-        if os.path.exists(self.warm_cache_path):
+        self.warm_cache_path = os.environ.get("KG_WARM_CACHE_PATH", self.warm_cache_path)
+        active_file = self._get_active_file()
+        c_mtime = os.path.getmtime(self.warm_cache_path) if os.path.exists(self.warm_cache_path) else -1.0
+        a_mtime = os.path.getmtime(active_file) if os.path.exists(active_file) else -1.0
+
+        # 1. Try reading warm cache first when fresh (>= primary JSON mtime) for 0ms reads
+        if os.path.exists(self.warm_cache_path) and c_mtime >= a_mtime:
             try:
                 with open(self.warm_cache_path, "r", encoding="utf-8") as f:
                     cache_data = json.load(f)
                     self.nodes = {n["id"]: n for n in cache_data.get("nodes", []) if "id" in n}
                     self.edges = cache_data.get("edges", [])
+                    self._last_mtime = self._compute_mtime_snapshot()
                     return
             except Exception as e:
                 logging.warning(f"Failed to read warm cache: {e}")
 
         # 2. Fall back to primary JSON file
-        active_file = self._get_active_file()
         if os.path.exists(active_file):
             try:
                 with open(active_file, "r", encoding="utf-8") as f:
@@ -60,14 +87,19 @@ class KnowledgeGraphEngine:
         else:
             self.nodes = {}
             self.edges = []
+        self._last_mtime = self._compute_mtime_snapshot()
 
     def _update_warm_cache(self):
         try:
-            if os.path.exists("/dev/shm") and os.access("/dev/shm", os.W_OK):
+            cache_dir = os.path.dirname(os.path.abspath(self.warm_cache_path))
+            if cache_dir and os.path.exists(cache_dir) and os.access(cache_dir, os.W_OK):
+                node_list = list(self.nodes.values())
                 payload = {
                     "version": "1.0",
                     "updated_at": time.time(),
-                    "nodes": list(self.nodes.values()),
+                    "nodes_count": len(node_list),
+                    "edges_count": len(self.edges),
+                    "nodes": node_list,
                     "edges": self.edges
                 }
                 with open(self.warm_cache_path, "w", encoding="utf-8") as f:
@@ -130,6 +162,7 @@ class KnowledgeGraphEngine:
         return edge
 
     def search_nodes(self, query: str, limit: int = 10) -> List[Dict[str, Any]]:
+        self._ensure_fresh()
         q = query.lower()
         results = []
         for node in self.nodes.values():
@@ -147,7 +180,7 @@ class KnowledgeGraphEngine:
 
     def get_subgraph_context(self, target_id: str, max_hops: int = 2) -> str:
         """Extracts an ultra-compact (<500 tokens) prompt-ready context block for LLMs."""
-        self._load_graph()
+        self._ensure_fresh()
         if target_id not in self.nodes:
             matches = self.search_nodes(target_id, limit=1)
             if matches:
@@ -188,6 +221,8 @@ def get_kg_engine() -> KnowledgeGraphEngine:
     global _engine_instance
     if _engine_instance is None:
         _engine_instance = KnowledgeGraphEngine()
+    else:
+        _engine_instance._ensure_fresh()
     return _engine_instance
 
 if __name__ == "__main__":

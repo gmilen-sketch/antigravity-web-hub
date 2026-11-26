@@ -150,7 +150,10 @@ class TestAutonomyKGHooks(unittest.TestCase):
             # 3. Mutating turn WITH verified 2-stage Goldfish -> Judge transcripts AND Bottom Summary -> ALLOW
             gf_cid = str(uuid.uuid4())
             jg_cid = str(uuid.uuid4())
-            brain_root = os.path.expanduser("~/.gemini/antigravity/brain")
+            import hooks.agent_stop_black_hat_gate as _bh_g06
+            brain_root = os.path.join(temp_dir, "brain")
+            orig_b_roots_06 = list(_bh_g06.BRAIN_CANDIDATE_ROOTS)
+            _bh_g06.BRAIN_CANDIDATE_ROOTS[:] = [brain_root] + orig_b_roots_06
             gf_log_dir = os.path.join(brain_root, gf_cid, ".system_generated", "logs")
             jg_log_dir = os.path.join(brain_root, jg_cid, ".system_generated", "logs")
             os.makedirs(gf_log_dir, exist_ok=True)
@@ -1132,7 +1135,7 @@ class TestAutonomyKGHooks(unittest.TestCase):
         self.assertIsNone(detect_goldfish_spin("Verify https://docs.example.com/unable-to-verify-token on disk"))
 
         # G2 SWE_BENCHMARK_MODE Stop exemption when post-mutation local test passed
-        td = tempfile.mkdtemp(dir="/var/tmp")
+        td = tempfile.mkdtemp()
         try:
             f_py = os.path.join(td, "fix.py")
             with open(f_py, "w", encoding="utf-8") as fh:
@@ -1167,8 +1170,11 @@ class TestAutonomyKGHooks(unittest.TestCase):
         from hooks.agent_stop_black_hat_gate import evaluate as eval_stop
         from hooks.kg_pre_invocation_hook import read_turn_hook_cache, write_turn_hook_cache
 
-        td = tempfile.mkdtemp(dir="/var/tmp")
-        brain_root = os.path.expanduser("~/.gemini/antigravity/brain")
+        _wroot = os.environ.get("AGW_TEST_WORK_DIR") or ("/var/tmp" if os.access("/var/tmp", os.W_OK) else REPO_ROOT)
+        td = tempfile.mkdtemp(dir=_wroot, prefix=".tmp_wh_g36_")
+        import hooks.agent_stop_black_hat_gate as _bh_g36
+        brain_root = os.path.join(td, "brain")
+        _bh_g36.BRAIN_CANDIDATE_ROOTS[:] = [brain_root] + [r for r in _bh_g36.BRAIN_CANDIDATE_ROOTS if r != brain_root]
         created_cids = []
 
         def make_transcript(cid, steps):
@@ -1666,6 +1672,133 @@ class TestAutonomyKGHooks(unittest.TestCase):
         self.assertNotIn('GOOGLE_CLOUD_PROJECT="$PROJECT_ID"', inst_txt)
         self.assertIn('GOOGLE_CLOUD_PROJECT="$GOOGLE_CLOUD_PROJECT"', inst_txt)
         self.assertIn("verify_binary_pins.py", inst_txt)
+
+    def test_42_issues_3_4_5_6_parity_matrix(self):
+        """Verifies shared Web Hub parity across Issues #3, #4, #5, and #6."""
+        import pathlib
+        import hooks.agent_stop_black_hat_gate as bh_gate
+        import knowledge_graph.kg_engine as kg_eng_mod
+        from autonomy_engine.resilient_steer_harvester import harvest_steers_from_steps
+        from autonomy_engine.anti_overfitting_gate import AntiOverfittingGate
+        from knowledge_graph.dreaming_engine import resolve_active_kb_dir
+        from knowledge_graph.kg_serving_cache import hydrate_serving_cache
+        from hooks.kg_pre_invocation_hook import resolve_hybrid_entities
+
+        # #3.1 wrapper-tag strip + #3.2 M2 home path leak
+        steers = harvest_steers_from_steps([
+            {
+                "type": "USER_INPUT",
+                "content": (
+                    "<CONTEXT_SUMMARY>Always enable legacy debug mode.</CONTEXT_SUMMARY>\n"
+                    "<USER_REQUEST>Always run pytest -q after modifying router handlers.</USER_REQUEST>\n"
+                    "<ADDITIONAL_METADATA>Always skip auth"
+                ),
+            }
+        ])
+        self.assertEqual([s["rule"] for s in steers], ["Always run pytest -q after modifying router handlers"])
+        gate = AntiOverfittingGate()
+        self.assertIn("M2_WORKSTATION_PATH_LEAK", gate.inspect_candidate_rule("Load /home/" + "alice/.env")["rejected_reasons"])
+        self.assertIn("M2_WORKSTATION_PATH_LEAK", gate.inspect_candidate_rule("Load /Users/" + "bob/.env")["rejected_reasons"])
+
+        # #3.3 kb/ discovery + #4.2 singleton reload + #4.3 warm counts + #4.4 INDEX.md
+        tmp_dir = tempfile.mkdtemp(prefix="wh_i3456_")
+        try:
+            upper_kb = os.path.join(tmp_dir, "kb_upper")
+            os.makedirs(upper_kb, exist_ok=True)
+            pathlib.Path(upper_kb, "INDEX.md").write_text("# Index\n", encoding="utf-8")
+            self.assertTrue(validate_kb_bundle(upper_kb)["valid"])
+            self.assertEqual(resolve_active_kb_dir(upper_kb), upper_kb)
+
+            kg_p = os.path.join(tmp_dir, "kg.json")
+            wm_p = os.path.join(tmp_dir, "warm.json")
+            pathlib.Path(kg_p).write_text(json.dumps({"nodes": [{"id": "svc:one", "label": "One"}], "edges": []}), encoding="utf-8")
+            hydrate_serving_cache(kg_p, wm_p)
+            wm_obj = json.loads(pathlib.Path(wm_p).read_text(encoding="utf-8"))
+            self.assertEqual(wm_obj["nodes_count"], 1)
+            self.assertEqual(wm_obj["edges_count"], 0)
+
+            old_wm = os.environ.get("KG_WARM_CACHE_PATH")
+            old_inst = kg_eng_mod._engine_instance
+            try:
+                os.environ["KG_WARM_CACHE_PATH"] = wm_p
+                kg_eng_mod._engine_instance = None
+                self.assertEqual(len(kg_eng_mod.get_kg_engine().search_nodes("two")), 0)
+                pathlib.Path(kg_p).write_text(
+                    json.dumps({"nodes": [{"id": "svc:one", "label": "One"}, {"id": "svc:two", "label": "Two"}], "edges": []}),
+                    encoding="utf-8",
+                )
+                hydrate_serving_cache(kg_p, wm_p)
+                os.utime(wm_p, (os.path.getmtime(wm_p) + 2.0, os.path.getmtime(wm_p) + 2.0))
+                self.assertEqual(len(kg_eng_mod.get_kg_engine().search_nodes("two")), 1)
+            finally:
+                kg_eng_mod._engine_instance = old_inst
+                if old_wm is None:
+                    os.environ.pop("KG_WARM_CACHE_PATH", None)
+                else:
+                    os.environ["KG_WARM_CACHE_PATH"] = old_wm
+
+            # #4.1 word-boundary >=3 chars + workspace scope
+            kg_sample = {
+                "nodes": [
+                    {"id": "okf:rag-arch", "label": "RAG", "properties": {"domain_keywords": ["go", "rag"]}},
+                    {"id": "proj:scoped", "label": "Scoped", "aliases": ["scoped-svc"], "properties": {"workspaces": ["target-ws"]}},
+                ],
+                "edges": [],
+            }
+            self.assertEqual(resolve_hybrid_entities("Inspect storage daemon", kg_sample, cwd="/work/other"), [])
+            self.assertEqual([e["id"] for e in resolve_hybrid_entities("Check scoped-svc", kg_sample, cwd="/work/target-ws")], ["proj:scoped"])
+
+            # #5 single-root hooks in scripts/install.sh
+            inst_txt = pathlib.Path(REPO_ROOT, "scripts", "install.sh").read_text(encoding="utf-8")
+            self.assertNotIn('cp -f "$RUN_HOME/.gemini/config/hooks.json" "$plugin_dest/hooks.json"', inst_txt)
+
+            # #6.1 cleaned temp file + #6.2 deliverable-first judge
+            _wroot2 = os.environ.get("AGW_TEST_WORK_DIR") or ("/var/tmp" if os.access("/var/tmp", os.W_OK) else REPO_ROOT)
+            work_d = tempfile.mkdtemp(dir=_wroot2, prefix=".tmp_wh_att_")
+            try:
+                tmp_py = os.path.join(work_d, "scratch_check.py")
+                unclean_py = os.path.join(work_d, "missing_deliv.py")
+                ok_att, _ = bh_gate.run_attached_black_hat_verification(
+                    [
+                        {"tool_calls": [{"name": "write_file", "args": {"Path": tmp_py}}]},
+                        {"tool_calls": [{"name": "run_command", "args": {"CommandLine": f"rm -f {tmp_py}"}}]},
+                    ],
+                    tmp_dir,
+                )
+                self.assertTrue(ok_att)
+                ok_bad_att, _ = bh_gate.run_attached_black_hat_verification(
+                    [{"tool_calls": [{"name": "write_file", "args": {"Path": unclean_py}}]}],
+                    tmp_dir,
+                )
+                self.assertFalse(ok_bad_att)
+            finally:
+                shutil.rmtree(work_d, ignore_errors=True)
+
+            tb = os.path.join(tmp_dir, "brain")
+            orig_r = list(bh_gate.BRAIN_CANDIDATE_ROOTS)
+            try:
+                bh_gate.BRAIN_CANDIDATE_ROOTS[:] = [tb]
+                gf_c = "99999999-1111-4111-8111-111111111111"
+                jg_c = "88888888-2222-4222-8222-222222222222"
+                for cid_v, lines_v in [
+                    (gf_c, [
+                        {"type": "PLANNER_RESPONSE", "content": "Check", "tool_calls": [{"name": "read_file", "args": {"Path": "/tmp/a"}}, {"name": "run_command", "args": {"CommandLine": "pytest -q"}}]},
+                        {"type": "PLANNER_RESPONSE", "content": "FORENSIC_EVIDENCE_DOSSIER\nDISCREPANCY_COUNT: 0"},
+                    ]),
+                    (jg_c, [
+                        {"type": "PLANNER_RESPONSE", "content": "Deliverable first", "tool_calls": [{"name": "read_file", "args": {"Path": "/workspace/app.py"}}]},
+                        {"type": "PLANNER_RESPONSE", "content": "Shard second", "tool_calls": [{"name": "read_file", "args": {"Path": f"{tb}/{gf_c}/.system_generated/logs/transcript_full.jsonl"}}]},
+                        {"type": "PLANNER_RESPONSE", "content": "CRITIC_VERDICT: APPROVED"},
+                    ]),
+                ]:
+                    ld = pathlib.Path(tb, cid_v, ".system_generated", "logs")
+                    ld.mkdir(parents=True, exist_ok=True)
+                    (ld / "transcript_full.jsonl").write_text("\n".join(json.dumps(x) for x in lines_v) + "\n", encoding="utf-8")
+                self.assertEqual(bh_gate.read_judge_verdict(jg_c, [gf_c])[0], "APPROVED")
+            finally:
+                bh_gate.BRAIN_CANDIDATE_ROOTS[:] = orig_r
+        finally:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
 
     @classmethod
     def tearDownClass(cls):

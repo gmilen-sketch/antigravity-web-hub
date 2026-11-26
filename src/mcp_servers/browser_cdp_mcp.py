@@ -7,7 +7,7 @@ Purpose:
   `playwright_scraper/cdp_navigator.py` with eager tool loading (`antigravity/alwaysLoad`).
 
 How It Is Used:
-  Launched automatically via `mcp_config.json` (`python3 -B browser_cdp_mcp.py`).
+  Launched automatically via `mcp_config.json` (`python3 -B src/mcp_servers/browser_cdp_mcp.py`).
 """
 
 import json
@@ -19,36 +19,31 @@ sys.dont_write_bytecode = True
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _PARENT = os.path.dirname(_HERE)
 for _cand in (
-    os.path.join(_PARENT, "playwright_scraper"),
-    os.path.expanduser("~/.gemini/antigravity/bin/playwright_scraper"),
+    _PARENT,
+    _HERE,
+    os.path.expanduser("~/.gemini/antigravity/bin"),
 ):
     if os.path.isdir(_cand) and _cand not in sys.path:
         sys.path.insert(0, _cand)
 
-try:
-    from fastmcp import FastMCP
-except ImportError:
-    class FastMCP:  # type: ignore[no-redef]
-        def __init__(self, name: str = "", **kwargs):
-            self.name = name
-
-        def tool(self, *args, **kwargs):
-            def decorator(fn):
-                return fn
-            return decorator
-
-        def run(self, *args, **kwargs):
-            pass
+from stdio_fastmcp_compat import FastMCP
 
 EAGER_TOOL_META = {"antigravity/alwaysLoad": True}
 mcp = FastMCP("browser_cdp")
 
 
-@mcp.tool()
+def _eager_tool():
+    try:
+        return mcp.tool(meta=EAGER_TOOL_META)
+    except TypeError:
+        return mcp.tool()
+
+
+@_eager_tool()
 def audit_web_ui_geometry(url: str = "http://127.0.0.1:8080/", viewport_width: int = 1440, viewport_height: int = 900) -> str:
     """Run 5-invariant DOM/SVG geometry auditor (`issueCount == 0`) against a target URL."""
     try:
-        import audit_web_ui_geometry as geom
+        from playwright_scraper import audit_web_ui_geometry as geom
         if hasattr(geom, "audit_url"):
             return json.dumps(geom.audit_url(url, width=viewport_width, height=viewport_height), indent=2)
     except Exception:
@@ -64,11 +59,11 @@ def audit_web_ui_geometry(url: str = "http://127.0.0.1:8080/", viewport_width: i
     )
 
 
-@mcp.tool()
+@_eager_tool()
 def cdp_shadow_dom_snapshot(selector: str = "#upload") -> str:
     """Return Shadow DOM collector script and React Fiber file-upload helper metadata."""
     try:
-        from cdp_navigator import SHADOW_DOM_COLLECTOR_JS, build_react_fiber_upload_js
+        from playwright_scraper.cdp_navigator import SHADOW_DOM_COLLECTOR_JS, build_react_fiber_upload_js
         sample_js = build_react_fiber_upload_js(selector, "sample.txt", "text/plain", "c2FtcGxl")
         return json.dumps(
             {

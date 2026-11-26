@@ -810,6 +810,7 @@ def read_judge_verdict(judge_cid: str, goldfish_cids: Any) -> Tuple[Optional[str
     model_steps = 0
     tool_calls_count = 0
     read_paths: List[Tuple[str, str]] = []
+    reads_before_verdict: List[Tuple[str, str]] = []
     forbidden_tool: Optional[str] = None
     approved = False
     rejected = False
@@ -834,8 +835,10 @@ def read_judge_verdict(judge_cid: str, goldfish_cids: Any) -> Tuple[Optional[str
                         mitm_detected = True
                     if REJECTED_VERDICT.search(content):
                         rejected = True
+                        reads_before_verdict = list(read_paths)
                     elif APPROVED_VERDICT.search(content):
                         approved = True
+                        reads_before_verdict = list(read_paths)
                 for call in entry.get("tool_calls") or []:
                     if not isinstance(call, dict):
                         continue
@@ -872,23 +875,17 @@ def read_judge_verdict(judge_cid: str, goldfish_cids: Any) -> Tuple[Optional[str
         pl = p.lower()
         return target_cid in pl and (pl.endswith("transcript.jsonl") or pl.endswith("transcript_full.jsonl"))
 
-    first_name, first_path = read_paths[0]
-    if not any(_is_gf_transcript(first_path, gcid) for gcid in wave_cids):
-        return None, (
-            f"judge {judge_cid[:8]} first tool call ({first_name} -> {os.path.basename(first_path) or '<none>'}) "
-            f"did not read an active goldfish shard transcript ({', '.join(c[:8] for c in wave_cids)})"
-        )
-
-    missing_cids = [gcid for gcid in wave_cids if not any(_is_gf_transcript(rp, gcid) for _, rp in read_paths)]
+    audited_reads = reads_before_verdict if (approved or rejected) else read_paths
+    missing_cids = [gcid for gcid in wave_cids if not any(_is_gf_transcript(rp, gcid) for _, rp in audited_reads)]
     if missing_cids:
         return None, (
             f"judge {judge_cid[:8]} failed C6-Multi: did not read active goldfish shard transcript(s) "
-            f"{', '.join(c[:8] for c in missing_cids)}"
+            f"{', '.join(c[:8] for c in missing_cids)} prior to emitting verdict"
         )
 
     if len(wave_cids) >= 2:
         deliverable_reads = [
-            rp for _, rp in read_paths
+            rp for _, rp in audited_reads
             if rp and not any(_is_gf_transcript(rp, gcid) for gcid in wave_cids)
             and not rp.lower().endswith(("transcript.jsonl", "transcript_full.jsonl"))
         ]
@@ -1270,7 +1267,7 @@ def rejection_text(
         f"  2. **Stage 2 (Isolated Judge)**: After `{GOLDFISH_AGENT_NAME}` completes, call "
         f"`invoke_subagent(TypeName=\"{JUDGE_AGENT_NAME}\")` with the goldfish `conversationId`, the exact goldfish "
         f"transcript path (`{brain_root}/<goldfish_cid>/.system_generated/logs/transcript.jsonl`), the itemized claims, "
-        "and deliverable paths. The judge must read the goldfish transcript as its first tool call and end with "
+        "and deliverable paths. The judge must read all active goldfish transcripts before emitting "
         "`CRITIC_VERDICT: APPROVED` or `CRITIC_VERDICT: REJECTED`.\n"
         "  3. **Stage 3 (Compact 2-Part Bottom Summary)**: Once APPROVED, your final closing message MUST include "
         "`### Summary of Approved Response & Deliverables` followed by `CRITIC_VERDICT: APPROVED | GCS = 1.000 | <N/N Checks Passed>`."
@@ -1278,26 +1275,93 @@ def rejection_text(
     )
 
 
+DELETE_FILE_TOOLS = {"delete_file", "remove_file", "DeleteFile", "RemoveFile"}
+
+_SHELL_CLEANUP_VERB_RE = re.compile(
+    r"(?:\b(?:rm|unlink)\b|\bgit\s+(?:clean|checkout|restore)\b|\bos\.(?:remove|unlink)\s*\(|\bshutil\.rmtree\s*\(|\.unlink\s*\()",
+    re.IGNORECASE,
+)
+
+
+def _command_cleans_up_target(command: str, normalized_target: str) -> bool:
+    if not command or not normalized_target:
+        return False
+    if not _SHELL_CLEANUP_VERB_RE.search(command):
+        return False
+    if re.search(r"\bgit\s+clean\b", command):
+        return True
+    bname = os.path.basename(normalized_target)
+    parent_bname = os.path.basename(os.path.dirname(normalized_target))
+    if normalized_target in command or (bname and re.search(r"(?<![A-Za-z0-9_.-])" + re.escape(bname) + r"(?![A-Za-z0-9_.-])", command)):
+        return True
+    if parent_bname and re.search(r"\b(?:rm\s+-[A-Za-z]*r|shutil\.rmtree)\b", command) and parent_bname in command:
+        return True
+    return False
+
+
+def _is_git_clean_untracked_absence(normalized_target: str) -> bool:
+    """Returns True when normalized_target is inside a Git working tree and `git status --porcelain -- <path>` is empty."""
+    parent = os.path.dirname(normalized_target)
+    if not parent or not os.path.isdir(parent):
+        return False
+    try:
+        import subprocess
+        tl = subprocess.run(
+            ["git", "-C", parent, "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            timeout=1.5,
+        )
+        if tl.returncode != 0:
+            return False
+        st = subprocess.run(
+            ["git", "-C", parent, "status", "--porcelain", "--", normalized_target],
+            capture_output=True,
+            text=True,
+            timeout=1.5,
+        )
+        return st.returncode == 0 and st.stdout.strip() == ""
+    except Exception:
+        return False
+
+
 def run_attached_black_hat_verification(
     turn: List[Dict[str, Any]], artifact_dir: str
 ) -> Tuple[bool, List[str]]:
     failures: List[str] = []
-    seen_targets = set()
-    for name, args in iter_tool_calls(turn):
-        if not isinstance(args, dict) or name not in FILE_MUTATING_TOOLS:
-            continue
-        raw_target = ""
-        for key in TARGET_KEYS:
-            if isinstance(args.get(key), str) and args.get(key):
-                raw_target = args[key]
-                break
-        if not raw_target or is_exempt_target(raw_target, artifact_dir):
-            continue
-        normalized = _normalize(raw_target)
-        if not normalized or normalized in seen_targets:
-            continue
-        seen_targets.add(normalized)
+    active_targets: List[str] = []
+    saw_cleanup_action = False
 
+    for name, args in iter_tool_calls(turn):
+        if not isinstance(args, dict):
+            continue
+        if name in FILE_MUTATING_TOOLS:
+            raw_target = ""
+            for key in TARGET_KEYS:
+                if isinstance(args.get(key), str) and args.get(key):
+                    raw_target = args[key]
+                    break
+            if not raw_target or is_exempt_target(raw_target, artifact_dir):
+                continue
+            normalized = _normalize(raw_target)
+            if normalized and normalized not in active_targets:
+                active_targets.append(normalized)
+        elif name in DELETE_FILE_TOOLS:
+            saw_cleanup_action = True
+            for key in TARGET_KEYS:
+                if isinstance(args.get(key), str) and args.get(key):
+                    norm_del = _normalize(args[key])
+                    if norm_del in active_targets:
+                        active_targets.remove(norm_del)
+        elif name in ("run_command", "Bash", "bash"):
+            command = str(args.get("CommandLine") or args.get("command") or "")
+            if _SHELL_CLEANUP_VERB_RE.search(command):
+                saw_cleanup_action = True
+                active_targets = [
+                    t for t in active_targets if not _command_cleans_up_target(command, t)
+                ]
+
+    for normalized in active_targets:
         parent_dir = os.path.dirname(normalized)
         if not parent_dir or not os.path.isdir(parent_dir):
             continue
@@ -1306,6 +1370,8 @@ def run_attached_black_hat_verification(
 
         bname = os.path.basename(normalized)
         if not os.path.exists(normalized):
+            if saw_cleanup_action and _is_git_clean_untracked_absence(normalized):
+                continue
             failures.append(f"attached-check: mutated file missing on disk ({bname})")
             continue
         if os.path.isfile(normalized) and os.path.getsize(normalized) == 0:

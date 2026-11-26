@@ -466,8 +466,13 @@ for p in paths:
 
 hook_paths = [
   f'{home}/.gemini/config/hooks.json',
-  f'{home}/.gemini/antigravity/hooks.json'
 ]
+for stale_hp in (f'{home}/.gemini/antigravity/hooks.json', f'{home}/.agents/hooks.json', '/mnt/data/projects/.agents/hooks.json'):
+  try:
+    if os.path.exists(stale_hp):
+      os.remove(stale_hp)
+  except Exception:
+    pass
 
 for hp in hook_paths:
   try:
@@ -556,8 +561,8 @@ if [ -f "plugin.json" ]; then
         [ -f "$p_hook" ] && sed -i "s|../../src/hooks/run_hook_safe.sh|$BIN_DIR/hooks/run_hook_safe.sh|g" "$p_hook"
       done
     fi
-    [ -f "$RUN_HOME/.gemini/config/hooks.json" ] && cp -f "$RUN_HOME/.gemini/config/hooks.json" "$plugin_dest/hooks.json"
-    rm -f "$plugin_dest/mcp_config.json" 2>/dev/null || true
+    rm -f "$plugin_dest/hooks.json" "$plugin_dest/mcp_config.json" 2>/dev/null || true
+    rm -rf "$plugin_dest/rules" "$plugin_dest/skills" "$plugin_dest/agents" 2>/dev/null || true
     chown -R "$RUN_USER:$RUN_USER" "$plugin_dest" 2>/dev/null || true
   done
   RUN_HOME="$RUN_HOME" python3 - << 'PYEOF'

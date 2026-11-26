@@ -15,6 +15,8 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List
 
+sys.dont_write_bytecode = True
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 SRC_DIR = os.path.dirname(SCRIPT_DIR)
@@ -25,7 +27,9 @@ from knowledge_graph.okf_knowledge_compiler import parse_frontmatter, VALID_TYPE
 
 KEBAB_RE = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}")
-LEAK_RE = re.compile(r"/workspace/local/" + r"home/[a-zA-Z0-9_.-]+")
+LEAK_RE = re.compile(
+    r"(?:(?:/[A-Za-z0-9_.-]+)*/home/[A-Za-z0-9_.-]+(?:/|$)|/Users/[A-Za-z0-9_.-]+(?:/|$))"
+)
 
 
 def validate_kb_bundle(kb_root: str) -> Dict[str, Any]:
@@ -37,9 +41,13 @@ def validate_kb_bundle(kb_root: str) -> Dict[str, Any]:
     if not kb_path.exists():
         return {"valid": False, "files_checked": 0, "errors": [f"KB root not found: {kb_root}"], "warnings": []}
 
-    index_file = kb_path / "index.md"
-    if not index_file.exists():
-        errors.append("Missing required entry point: kb/index.md")
+    has_index = (
+        (kb_path / "index.md").exists()
+        or (kb_path / "INDEX.md").exists()
+        or (kb_path.parent / "INDEX.md").exists()
+    )
+    if not has_index:
+        errors.append("Missing required entry point: kb/index.md or INDEX.md")
 
     for md_file in sorted(kb_path.rglob("*.md")):
         files_checked += 1
@@ -49,7 +57,7 @@ def validate_kb_bundle(kb_root: str) -> Dict[str, Any]:
         if LEAK_RE.search(content):
             errors.append(f"{rel}: Contains unanonymized workstation path leak")
 
-        if md_file.name in ("index.md", "log.md", "README.md"):
+        if md_file.name.lower() in ("index.md", "log.md", "readme.md"):
             continue
 
         meta = parse_frontmatter(content)

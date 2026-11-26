@@ -156,8 +156,11 @@ class AntiOverfittingGate:
         # 1. Hardcoded incident/ticket/UUID overfitting
         if re.search(r"\b(INC-\d{4,}|JIRA-\d{4,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4})\b", rule_text, re.IGNORECASE):
             reasons.append("M1_EPISODIC_ID_OVERFIT")
-        # 2. Hardcoded workstation path leak
-        if re.search(r"/workspace/local/" + r"home/[a-zA-Z0-9_.-]+", rule_text):
+        # 2. Hardcoded workstation path leak (container & standard Linux/macOS home paths)
+        if re.search(
+            r"(?:(?:/[A-Za-z0-9_.-]+)*/home/[A-Za-z0-9_.-]+(?:/|$)|/Users/[A-Za-z0-9_.-]+(?:/|$))",
+            rule_text,
+        ):
             reasons.append("M2_WORKSTATION_PATH_LEAK")
         # 3. Hardcoded date-pinned rule
         if re.search(r"\bonly on 202[0-9]-\d{2}-\d{2}\b", rule_text, re.IGNORECASE):
@@ -169,8 +172,12 @@ class AntiOverfittingGate:
         dep_pat = r"\b(gemini-1" + r"\.5|gemini-2" + r"\.0-flash|claude-3-5-" + r"sonnet)\b"
         if re.search(dep_pat, rule_text, re.IGNORECASE):
             reasons.append("M5_DEPRECATED_MODEL_PIN")
-        # 6. Contradictory bypass directive
-        if re.search(r"(skip black-hat|bypass stop gate|disable verification)", rule_text, re.IGNORECASE):
+        # 6. Contradictory bypass or guardrail-weakening directive
+        if re.search(
+            r"(skip black-hat|bypass stop gate|disable verification|ignore safety|disable sandbox|turn off security|weaken guardrail|bypass guardrail)",
+            rule_text,
+            re.IGNORECASE,
+        ):
             reasons.append("M6_GOVERNANCE_BYPASS")
         # 7. Unbounded prompt bloat (>1200 chars for a single atomic steer)
         if len(rule_text) > 1200:
@@ -178,8 +185,17 @@ class AntiOverfittingGate:
         # 8. Customer tenant name hardcoding in global rule
         if re.search(r"\b(HARDCODED_TENANT_CORP|ACME_PRODUCTION_SECRET)\b", rule_text):
             reasons.append("M8_TENANT_BOUNDARY_LEAK")
+        # 9. Non-actionable generic platitude check
+        if re.match(
+            r"^\s*(?:always\s+|please\s+)?(?:be\s+(?:helpful|accurate|careful|thorough|concise|good)|do\s+your\s+best|try\s+harder|write\s+good\s+code)(?:\s+and\s+(?:be\s+)?(?:accurate|helpful|careful|thorough|concise|good|do\s+your\s+best))*\s*[.!]*\s*$",
+            rule_text,
+            re.IGNORECASE,
+        ):
+            reasons.append("M9_NON_ACTIONABLE_PLATITUDE")
 
         return {"passed": len(reasons) == 0, "rejected_reasons": reasons}
+
+    evaluate_candidate_rule = evaluate_rule_candidate
 
     def run_saboteur_benchmark(self) -> Dict[str, Any]:
         """Runs the 8-mutant adversarial saboteur suite; requires 100% mutant rejection."""

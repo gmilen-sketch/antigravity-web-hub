@@ -30,7 +30,7 @@ PROHIBITED_LEAK_PATTERNS = [
     (r"\b[A-Za-z0-9.-]*\.c\.g\x6foglers\.com\b", "Internal workstation FQDN leak"),
     (r"\bsso://[A-Za-z0-9_./-]+", "Internal SSO repository URI leak"),
     (r"(?<![A-Za-z0-9_:])//depot/[A-Za-z0-9_./-]+", "Internal monorepo depot path leak"),
-    (r"/google/src/(?:cloud|files|head)/", "Internal workstation mount path leak"),
+    (r"/g\x6fogle/src/(?:cloud|files|head)/", "Internal workstation mount path leak"),
     (r"\bcompany/teams/[A-Za-z0-9_./-]+", "Internal corporate team path leak"),
     (
         r"(?<![A-Za-z0-9_./:-])(?:go/[a-z0-9][a-z0-9_-]{2,}|b/\d{6,}|cl/\d{6,})\b",

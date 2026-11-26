@@ -18,6 +18,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List
 
+sys.dont_write_bytecode = True
+
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(os.path.dirname(SCRIPT_DIR))
 SRC_DIR = os.path.dirname(SCRIPT_DIR)
@@ -70,7 +72,7 @@ def parse_frontmatter(md_text: str) -> Dict[str, Any]:
     return meta
 
 
-def sync_kb_to_graph(kb_root: str = DEFAULT_KB_ROOT, graph_path: str = None) -> Dict[str, Any]:
+def sync_kb_to_graph(kb_root: str = DEFAULT_KB_ROOT, graph_path: str = None, cache_path: str = None) -> Dict[str, Any]:
     """Reads all OKF v0.2 Markdown dossiers under kb/ and upserts `okf:<id>` nodes into the KG."""
     active_graph = graph_path or find_active_graph_path()
     kb_path = Path(kb_root)
@@ -96,7 +98,7 @@ def sync_kb_to_graph(kb_root: str = DEFAULT_KB_ROOT, graph_path: str = None) -> 
     now_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
     for md_file in sorted(kb_path.rglob("*.md")):
-        if md_file.name in ("index.md", "log.md", "README.md"):
+        if md_file.name.lower() in ("index.md", "log.md", "readme.md"):
             continue
         text = md_file.read_text(encoding="utf-8", errors="ignore")
         meta = parse_frontmatter(text)
@@ -145,12 +147,13 @@ def sync_kb_to_graph(kb_root: str = DEFAULT_KB_ROOT, graph_path: str = None) -> 
     with open(active_graph, "w", encoding="utf-8") as f:
         json.dump(gdata, f, indent=2)
 
-    cache_res = hydrate_serving_cache(active_graph)
+    cache_res = hydrate_serving_cache(active_graph, cache_path=cache_path) if cache_path else hydrate_serving_cache(active_graph)
     return {
         "status": "ok",
         "kb_root": str(kb_path),
         "synced_dossiers": synced,
         "total_graph_nodes": len(gdata["nodes"]),
+        "total_graph_edges": len(gdata.get("edges", [])),
         "serving_cache": cache_res,
     }
 
@@ -159,6 +162,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="OKF v0.2 Knowledge Compiler")
     parser.add_argument("--kb-root", type=str, default=DEFAULT_KB_ROOT, help="Path to kb/ bundle")
     parser.add_argument("--graph-path", type=str, default=None, help="Path to knowledge_graph.json")
+    parser.add_argument("--cache-path", type=str, default=None, help="Optional warm cache output path")
     args = parser.parse_args()
-    res = sync_kb_to_graph(kb_root=args.kb_root, graph_path=args.graph_path)
+    res = sync_kb_to_graph(kb_root=args.kb_root, graph_path=args.graph_path, cache_path=args.cache_path)
     print(json.dumps(res, indent=2))
